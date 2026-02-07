@@ -1,0 +1,365 @@
+@page "/tagging"
+@using FinOps.Models
+@using FinOps.Services
+@inject IAzureSubscriptionService SubscriptionService
+@inject IResourceTaggingService TaggingService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Tagging</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Resource Tagging</MudText>
+
+@* Tenant connection bar *@
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+            Home / Lighthouse
+        </MudChip>
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+@* Step 1: Select a subscription *@
+<MudTable T="TenantSubscription" Items="@_filteredSubscriptions" Loading="@_loadingSubscriptions"
+          Hover="true" Dense="true" Elevation="2"
+          SelectedItem="@_selectedSubscription" SelectedItemChanged="OnSubscriptionSelected">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">1. Select a Subscription</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_searchText" Placeholder="Search subscriptions..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant</MudTh>
+        <MudTh><MudTableSortLabel T="TenantSubscription" SortBy="@(new Func<TenantSubscription, object>(x => x.DisplayName))">Name</MudTableSortLabel></MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudChip T="string" Color="@(context.IsDefault ? Color.Primary : Color.Secondary)" Size="Size.Small">
+                @(context.TenantDisplayName ?? context.TenantId)
+            </MudChip>
+        </MudTd>
+        <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        @if (_loadError is not null)
+        {
+            <MudText Color="Color.Error">@_loadError</MudText>
+        }
+        else
+        {
+            <MudText>No subscriptions found.</MudText>
+        }
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@* Step 2: Select resource groups *@
+@if (_selectedSubscription is not null)
+{
+    <MudTable T="ResourceGroupInfo" Items="@_resourceGroups" MultiSelection="true"
+              @bind-SelectedItems="_selectedResourceGroups" Loading="@_loadingResourceGroups"
+              Hover="true" Dense="true" Elevation="2" Class="mt-4">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">2. Select Resource Groups</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Label"
+                       OnClick="@OpenApplyTagsDialog">
+                Apply Tags (@_selectedResourceGroups.Count selected)
+            </MudButton>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh><MudTableSortLabel T="ResourceGroupInfo" SortBy="@(new Func<ResourceGroupInfo, object>(x => x.Name))">Name</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="ResourceGroupInfo" SortBy="@(new Func<ResourceGroupInfo, object>(x => x.Location ?? ""))">Location</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="ResourceGroupInfo" SortBy="@(new Func<ResourceGroupInfo, object>(x => x.ProvisioningState ?? ""))">State</MudTableSortLabel></MudTh>
+            <MudTh>Existing Tags</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="Location">@context.Location</MudTd>
+            <MudTd DataLabel="State">@context.ProvisioningState</MudTd>
+            <MudTd DataLabel="Existing Tags">
+                @if (context.Tags.Count > 0)
+                {
+                    @foreach (var tag in context.Tags.Take(3))
+                    {
+                        <MudTooltip Text="@($"{tag.Key} = {tag.Value}")">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                @tag.Key
+                            </MudChip>
+                        </MudTooltip>
+                    }
+                    @if (context.Tags.Count > 3)
+                    {
+                        <MudTooltip Text="@string.Join("\n", context.Tags.Skip(3).Select(t => $"{t.Key} = {t.Value}"))">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                +@(context.Tags.Count - 3) more
+                            </MudChip>
+                        </MudTooltip>
+                    }
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Tertiary">None</MudText>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            @if (_rgLoadError is not null)
+            {
+                <MudText Color="Color.Error">@_rgLoadError</MudText>
+            }
+            else
+            {
+                <MudText>No resource groups found.</MudText>
+            }
+        </NoRecordsContent>
+        <LoadingContent>
+            <MudText>Loading resource groups...</MudText>
+        </LoadingContent>
+    </MudTable>
+}
+
+@* Step 3: Results *@
+@if (_results.Count > 0)
+{
+    <MudText Typo="Typo.h6" Class="mt-6 mb-2">
+        Tagging Results
+        @if (_applying)
+        {
+            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="ml-2" />
+        }
+    </MudText>
+    <MudTable T="TagOperationResult" Items="@_results" Hover="true" Dense="true" Elevation="2">
+        <HeaderContent>
+            <MudTh>Resource</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh>Details</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Resource">@context.ResourceName</MudTd>
+            <MudTd DataLabel="Type">@context.ResourceType</MudTd>
+            <MudTd DataLabel="Status">
+                <MudChip T="string" Color="@(context.Success ? Color.Success : Color.Error)" Size="Size.Small">
+                    @(context.Success ? "Success" : "Failed")
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Details">
+                @if (!context.Success)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Error">@context.ErrorMessage</MudText>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private List<TenantSubscription> _subscriptions = [];
+    private TenantSubscription? _selectedSubscription;
+    private List<ResourceGroupInfo> _resourceGroups = [];
+    private HashSet<ResourceGroupInfo> _selectedResourceGroups = [];
+    private List<TagOperationResult> _results = [];
+    private bool _loadingSubscriptions = true;
+    private bool _loadingResourceGroups;
+    private bool _applying;
+    private string? _loadError;
+    private string? _rgLoadError;
+    private string _searchText = string.Empty;
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _subscriptions
+            : _subscriptions.Where(s =>
+                s.DisplayName.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.TenantId.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loadingSubscriptions = true;
+        _loadError = null;
+        _selectedSubscription = null;
+        _resourceGroups.Clear();
+        _selectedResourceGroups.Clear();
+        StateHasChanged();
+
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load subscriptions: {ex.Message}";
+        }
+        finally
+        {
+            _loadingSubscriptions = false;
+        }
+    }
+
+    private async Task OnSubscriptionSelected(TenantSubscription subscription)
+    {
+        _selectedSubscription = subscription;
+        _selectedResourceGroups.Clear();
+        _results.Clear();
+
+        if (subscription is null) return;
+
+        _loadingResourceGroups = true;
+        _rgLoadError = null;
+        StateHasChanged();
+
+        try
+        {
+            _resourceGroups = (await TaggingService.GetResourceGroupsAsync(subscription)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _rgLoadError = $"Failed to load resource groups: {ex.Message}";
+            _resourceGroups.Clear();
+        }
+        finally
+        {
+            _loadingResourceGroups = false;
+        }
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect Tenant", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            TenantClientManager.ConnectTenant(tenantId);
+            Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+
+    private async Task OpenApplyTagsDialog()
+    {
+        if (_applying) return;
+        if (_selectedSubscription is null || _selectedResourceGroups.Count == 0)
+        {
+            Snackbar.Add("Select at least one resource group first.", Severity.Warning);
+            return;
+        }
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.AddTagsDialog>("Apply Tags", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: Dictionary<string, string> tags })
+        {
+            _applying = true;
+            _results.Clear();
+            StateHasChanged();
+
+            try
+            {
+                var allResults = await TaggingService.ApplyTagsAsync(
+                    _selectedSubscription,
+                    _selectedResourceGroups,
+                    tags,
+                    onProgress: r =>
+                    {
+                        InvokeAsync(() =>
+                        {
+                            _results.Add(r);
+                            StateHasChanged();
+                        });
+                    });
+
+                var succeeded = allResults.Count(r => r.Success);
+                var failed = allResults.Count(r => !r.Success);
+
+                if (failed == 0)
+                    Snackbar.Add($"Tags applied to all {succeeded} resource(s)", Severity.Success);
+                else
+                    Snackbar.Add($"{succeeded} succeeded, {failed} failed", Severity.Warning);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error applying tags: {ex.Message}", Severity.Error);
+            }
+            finally
+            {
+                _applying = false;
+                // Reload resource groups so "Existing Tags" column reflects current state
+                await ReloadResourceGroups();
+            }
+        }
+    }
+
+    private async Task ReloadResourceGroups()
+    {
+        if (_selectedSubscription is null) return;
+
+        _loadingResourceGroups = true;
+        _selectedResourceGroups.Clear();
+        StateHasChanged();
+
+        try
+        {
+            _resourceGroups = (await TaggingService.GetResourceGroupsAsync(_selectedSubscription)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _rgLoadError = $"Failed to reload resource groups: {ex.Message}";
+        }
+        finally
+        {
+            _loadingResourceGroups = false;
+        }
+    }
+
+    private static Color GetStateColor(string? state) => state switch
+    {
+        "Enabled" => Color.Success,
+        "Disabled" => Color.Error,
+        "Warned" => Color.Warning,
+        _ => Color.Default
+    };
+}

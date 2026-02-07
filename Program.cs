@@ -12,6 +12,7 @@ builder.Services.AddMudServices();
 builder.Services.AddScoped<TenantClientManager>();
 builder.Services.AddScoped<IAzureSubscriptionService, AzureSubscriptionService>();
 builder.Services.AddScoped<IBudgetService, BudgetService>();
+builder.Services.AddScoped<IResourceTaggingService, ResourceTaggingService>();
 
 var app = builder.Build();
 
