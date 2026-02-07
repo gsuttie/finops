@@ -1,0 +1,53 @@
+@using System.Text.RegularExpressions
+
+<MudDialog>
+    <DialogContent>
+        <MudText Class="mb-4">Enter the Azure AD tenant ID (GUID) you want to connect to.</MudText>
+        <MudTextField T="string" @bind-Value="_tenantId" Label="Tenant ID" Placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      Error="@(!string.IsNullOrEmpty(_validationError))" ErrorText="@_validationError"
+                      Immediate="true" OnKeyUp="OnKeyUp" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Connect</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private string _tenantId = string.Empty;
+    private string? _validationError;
+
+    private static readonly Regex GuidRegex = new(
+        @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        RegexOptions.Compiled);
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        _validationError = null;
+
+        if (string.IsNullOrWhiteSpace(_tenantId))
+        {
+            _validationError = "Tenant ID is required.";
+            return;
+        }
+
+        if (!GuidRegex.IsMatch(_tenantId.Trim()))
+        {
+            _validationError = "Please enter a valid GUID.";
+            return;
+        }
+
+        MudDialog.Close(DialogResult.Ok(_tenantId.Trim().ToLowerInvariant()));
+    }
+
+    private void OnKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            Submit();
+    }
+}

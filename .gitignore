@@ -1,0 +1,49 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## Visual Studio
+.vs/
+*.rsuser
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]uild[Ll]og.*
+*.VisualState.xml
+TestResult.xml
+[Dd]ebugPublic/
+[Rr]eleases/
+[Aa][Rr][Cc][Hh][Ii][Vv][Ee][Ss]/
+
+## Rider / JetBrains
+.idea/
+*.sln.iml
+
+## VS Code
+.vscode/
+
+## User secrets
+secrets.json
+
+## Publish output
+publish/
+
+## NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+## Azure
+appsettings.*.local.json
+
+## Claude Code
+.claude/
+
+## OS files
+.DS_Store
+Thumbs.db

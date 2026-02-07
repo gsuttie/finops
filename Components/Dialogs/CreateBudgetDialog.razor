@@ -1,0 +1,71 @@
+@using FinOps.Models
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-2" />
+            Create Budget
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="_form" @bind-IsValid="_isValid">
+            <MudTextField T="string" @bind-Value="Model.Name"
+                          Label="Budget Name"
+                          Required="true"
+                          RequiredError="Budget name is required"
+                          MaxLength="63"
+                          Immediate="true" />
+
+            <MudNumericField T="decimal?" @bind-Value="Model.Amount"
+                             Label="Amount (USD)"
+                             Min="0.01m"
+                             Adornment="Adornment.Start"
+                             AdornmentIcon="@Icons.Material.Filled.AttachMoney"
+                             Required="true"
+                             RequiredError="Amount is required"
+                             Immediate="true" />
+
+            <MudSelect T="string" @bind-Value="Model.TimeGrain"
+                       Label="Time Grain"
+                       Required="true"
+                       RequiredError="Time grain is required">
+                <MudSelectItem T="string" Value="@("Monthly")">Monthly</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Quarterly")">Quarterly</MudSelectItem>
+                <MudSelectItem T="string" Value="@("Annually")">Annually</MudSelectItem>
+            </MudSelect>
+
+            <MudDatePicker @bind-Date="Model.StartDate"
+                           Label="Start Date"
+                           Required="true"
+                           RequiredError="Start date is required"
+                           DateFormat="yyyy-MM-dd" />
+
+            <MudDatePicker @bind-Date="Model.EndDate"
+                           Label="End Date (optional)"
+                           MinDate="Model.StartDate"
+                           Clearable="true"
+                           DateFormat="yyyy-MM-dd" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled"
+                   Disabled="@(!_isValid)" OnClick="Submit">
+            Create
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private MudForm _form = null!;
+    private bool _isValid;
+
+    public BudgetFormModel Model { get; set; } = new();
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(Model));
+}
