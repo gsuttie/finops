@@ -76,6 +76,49 @@ public class ResourceTaggingService(TenantClientManager tenantClientManager) : I
         return results;
     }
 
+    public async Task<IReadOnlyList<TagOperationResult>> RemoveTagsAsync(
+        TenantSubscription subscription,
+        IEnumerable<ResourceGroupInfo> resourceGroups,
+        IEnumerable<string> tagKeys,
+        Action<TagOperationResult>? onProgress = null)
+    {
+        var client = tenantClientManager.GetClientForTenant(subscription.TenantId);
+        var subResource = client.GetSubscriptionResource(
+            SubscriptionResource.CreateResourceIdentifier(subscription.SubscriptionId));
+
+        var patch = new TagResourcePatch
+        {
+            PatchMode = TagPatchMode.Delete
+        };
+        foreach (var key in tagKeys)
+        {
+            patch.TagValues.Add(key, "");
+        }
+
+        var results = new List<TagOperationResult>();
+
+        foreach (var rgInfo in resourceGroups)
+        {
+            var rgResource = (await subResource.GetResourceGroups().GetAsync(rgInfo.Name)).Value;
+
+            // Remove tags from the resource group itself
+            var rgResult = await TagResourceSafe(rgResource.GetTagResource(), patch, rgInfo.Name, "ResourceGroup");
+            results.Add(rgResult);
+            onProgress?.Invoke(rgResult);
+
+            // Remove tags from all resources within the resource group
+            await foreach (var resource in rgResource.GetGenericResourcesAsync())
+            {
+                var resourceResult = await TagResourceSafe(
+                    resource.GetTagResource(), patch, resource.Data.Name, resource.Data.ResourceType.ToString());
+                results.Add(resourceResult);
+                onProgress?.Invoke(resourceResult);
+            }
+        }
+
+        return results;
+    }
+
     private static async Task<TagOperationResult> TagResourceSafe(
         TagResource tagResource, TagResourcePatch patch, string name, string type)
     {

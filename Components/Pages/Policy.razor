@@ -1,0 +1,586 @@
+@page "/policy"
+@using FinOps.Models
+@using FinOps.Services
+@inject IAzureSubscriptionService SubscriptionService
+@inject IPolicyService PolicyService
+@inject IResourceTaggingService TaggingService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Policy</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Policy Management</MudText>
+
+@* Tenant connection bar *@
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+            Home / Lighthouse
+        </MudChip>
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadSubscriptions">
+            Refresh
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+@* Subscription selection *@
+<MudTable T="TenantSubscription" Items="@_filteredSubscriptions" Loading="@_loadingSubscriptions"
+          Hover="true" Dense="true" Elevation="2"
+          SelectedItem="@_selectedSubscription" SelectedItemChanged="OnSubscriptionSelected">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">1. Select a Subscription</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_searchText" Placeholder="Search subscriptions..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant</MudTh>
+        <MudTh><MudTableSortLabel T="TenantSubscription" SortBy="@(new Func<TenantSubscription, object>(x => x.DisplayName))">Name</MudTableSortLabel></MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudChip T="string" Color="@(context.IsDefault ? Color.Primary : Color.Secondary)" Size="Size.Small">
+                @(context.TenantDisplayName ?? context.TenantId)
+            </MudChip>
+        </MudTd>
+        <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        @if (_loadError is not null)
+        {
+            <MudText Color="Color.Error">@_loadError</MudText>
+        }
+        else
+        {
+            <MudText>No subscriptions found.</MudText>
+        }
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@* Tabs shown after subscription is selected *@
+@if (_selectedSubscription is not null)
+{
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" Class="mt-4" PanelClass="pa-4">
+        @* Tab 1: Tag Inheritance Policy *@
+        <MudTabPanel Text="Tag Inheritance Policy" Icon="@Icons.Material.Filled.Policy">
+            <MudStack Spacing="3">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                    <MudTextField T="string" @bind-Value="_tagNameForPolicy" Label="Tag Name"
+                                  Placeholder="e.g. CostCenter" Variant="Variant.Outlined"
+                                  Style="max-width: 300px;" />
+                    <MudTextField T="string" @bind-Value="_tagValueForPolicy" Label="Tag Value (optional)"
+                                  Placeholder="e.g. Engineering" Variant="Variant.Outlined"
+                                  Style="max-width: 300px;" />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               StartIcon="@Icons.Material.Filled.Add"
+                               OnClick="@AssignPolicy">
+                        Assign Policy
+                    </MudButton>
+                </MudStack>
+
+                @if (_policyResult is not null)
+                {
+                    <MudAlert Severity="@(_policyResult.Success ? Severity.Success : Severity.Error)"
+                              ShowCloseIcon="true" CloseIconClicked="@(() => _policyResult = null)">
+                        @(_policyResult.Success
+                            ? $"Policy '{_policyResult.PolicyAssignmentName}' {_policyResult.Operation.ToLower()}ed successfully."
+                            : $"Failed to {_policyResult.Operation.ToLower()} policy: {_policyResult.ErrorMessage}")
+                    </MudAlert>
+                }
+
+                <MudTable T="PolicyAssignmentInfo" Items="@_policyAssignments" Loading="@_loadingPolicies"
+                          Hover="true" Dense="true" Elevation="0">
+                    <ToolBarContent>
+                        <MudText Typo="Typo.h6">Existing Tag Inheritance Policies</MudText>
+                        <MudSpacer />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadPolicies">
+                            Refresh
+                        </MudButton>
+                    </ToolBarContent>
+                    <HeaderContent>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Tag</MudTh>
+                        <MudTh>Value</MudTh>
+                        <MudTh>Enforcement</MudTh>
+                        <MudTh>Identity</MudTh>
+                        <MudTh>Actions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Name">@(context.DisplayName ?? context.Name)</MudTd>
+                        <MudTd DataLabel="Tag">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">
+                                @context.TagName
+                            </MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Value">
+                            @if (!string.IsNullOrEmpty(context.TagValue))
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default">
+                                    @context.TagValue
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Tertiary">Inherited</MudText>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Enforcement">@context.EnforcementMode</MudTd>
+                        <MudTd DataLabel="Identity">
+                            <MudChip T="string" Size="Size.Small"
+                                     Color="@(context.HasManagedIdentity ? Color.Success : Color.Warning)">
+                                @(context.HasManagedIdentity ? "Assigned" : "None")
+                            </MudChip>
+                        </MudTd>
+                        <MudTd DataLabel="Actions">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                           Size="Size.Small" OnClick="@(() => RemovePolicy(context.Name))" />
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText>No tag inheritance policies found for this subscription.</MudText>
+                    </NoRecordsContent>
+                    <LoadingContent>
+                        <MudText>Loading policies...</MudText>
+                    </LoadingContent>
+                </MudTable>
+            </MudStack>
+        </MudTabPanel>
+
+        @* Tab 2: Remove Tags *@
+        <MudTabPanel Text="Remove Tags" Icon="@Icons.Material.Filled.LabelOff">
+            <MudStack Spacing="3">
+                <MudTable T="ResourceGroupInfo" Items="@_resourceGroups" MultiSelection="true"
+                          @bind-SelectedItems="_selectedResourceGroups" Loading="@_loadingResourceGroups"
+                          Hover="true" Dense="true" Elevation="0">
+                    <ToolBarContent>
+                        <MudText Typo="Typo.h6">2. Select Resource Groups</MudText>
+                        <MudSpacer />
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadResourceGroups">
+                            Refresh
+                        </MudButton>
+                    </ToolBarContent>
+                    <HeaderContent>
+                        <MudTh><MudTableSortLabel T="ResourceGroupInfo" SortBy="@(new Func<ResourceGroupInfo, object>(x => x.Name))">Name</MudTableSortLabel></MudTh>
+                        <MudTh>Location</MudTh>
+                        <MudTh>Existing Tags</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Name">@context.Name</MudTd>
+                        <MudTd DataLabel="Location">@context.Location</MudTd>
+                        <MudTd DataLabel="Existing Tags">
+                            @if (context.Tags.Count > 0)
+                            {
+                                @foreach (var tag in context.Tags.Take(3))
+                                {
+                                    <MudTooltip Text="@($"{tag.Key} = {tag.Value}")">
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                            @tag.Key
+                                        </MudChip>
+                                    </MudTooltip>
+                                }
+                                @if (context.Tags.Count > 3)
+                                {
+                                    <MudTooltip Text="@string.Join("\n", context.Tags.Skip(3).Select(t => $"{t.Key} = {t.Value}"))">
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                            +@(context.Tags.Count - 3) more
+                                        </MudChip>
+                                    </MudTooltip>
+                                }
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Tertiary">None</MudText>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        @if (_rgLoadError is not null)
+                        {
+                            <MudText Color="Color.Error">@_rgLoadError</MudText>
+                        }
+                        else
+                        {
+                            <MudText>No resource groups found.</MudText>
+                        }
+                    </NoRecordsContent>
+                    <LoadingContent>
+                        <MudText>Loading resource groups...</MudText>
+                    </LoadingContent>
+                </MudTable>
+
+                @if (_selectedResourceGroups.Count > 0)
+                {
+                    <MudPaper Class="pa-3" Elevation="0" Outlined="true">
+                        <MudText Typo="Typo.h6" Class="mb-2">3. Select Tags to Remove</MudText>
+                        <MudText Typo="Typo.body2" Class="mb-2" Color="Color.Tertiary">
+                            Tags found across @_selectedResourceGroups.Count selected resource group(s):
+                        </MudText>
+                        @if (_availableTagKeys.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Color="Color.Tertiary">No tags found on selected resource groups.</MudText>
+                        }
+                        else
+                        {
+                            <MudChipSet T="string" SelectionMode="SelectionMode.MultiSelection" SelectedValues="_selectedTagKeys"
+                                        SelectedValuesChanged="OnTagKeysChanged" Variant="Variant.Filled"
+                                        Color="Color.Primary" CheckMark="true">
+                                @foreach (var key in _availableTagKeys)
+                                {
+                                    <MudChip T="string" Value="@key">@key</MudChip>
+                                }
+                            </MudChipSet>
+
+                            <MudButton Variant="Variant.Filled" Color="Color.Error" Class="mt-3"
+                                       StartIcon="@Icons.Material.Filled.DeleteSweep"
+                                       OnClick="@RemoveTags">
+                                Remove Tags (@_selectedTagKeys.Count selected)
+                            </MudButton>
+                        }
+                    </MudPaper>
+                }
+
+                @* Tag removal results *@
+                @if (_tagResults.Count > 0)
+                {
+                    <MudText Typo="Typo.h6" Class="mt-2">
+                        Tag Removal Results
+                        @if (_removingTags)
+                        {
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="ml-2" />
+                        }
+                    </MudText>
+                    <MudTable T="TagOperationResult" Items="@_tagResults" Hover="true" Dense="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Resource</MudTh>
+                            <MudTh>Type</MudTh>
+                            <MudTh>Status</MudTh>
+                            <MudTh>Details</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Resource">@context.ResourceName</MudTd>
+                            <MudTd DataLabel="Type">@context.ResourceType</MudTd>
+                            <MudTd DataLabel="Status">
+                                <MudChip T="string" Color="@(context.Success ? Color.Success : Color.Error)" Size="Size.Small">
+                                    @(context.Success ? "Success" : "Failed")
+                                </MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Details">
+                                @if (!context.Success)
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Error">@context.ErrorMessage</MudText>
+                                }
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudStack>
+        </MudTabPanel>
+    </MudTabs>
+}
+
+@code {
+    // Shared state
+    private List<TenantSubscription> _subscriptions = [];
+    private TenantSubscription? _selectedSubscription;
+    private bool _loadingSubscriptions = true;
+    private string? _loadError;
+    private string _searchText = string.Empty;
+
+    // Tab 1: Policy state
+    private List<PolicyAssignmentInfo> _policyAssignments = [];
+    private bool _loadingPolicies;
+    private string _tagNameForPolicy = string.Empty;
+    private string _tagValueForPolicy = string.Empty;
+    private PolicyOperationResult? _policyResult;
+
+    // Tab 2: Remove tags state
+    private List<ResourceGroupInfo> _resourceGroups = [];
+    private HashSet<ResourceGroupInfo> _selectedResourceGroups = [];
+    private bool _loadingResourceGroups;
+    private string? _rgLoadError;
+    private List<string> _availableTagKeys = [];
+    private IReadOnlyCollection<string> _selectedTagKeys = [];
+    private List<TagOperationResult> _tagResults = [];
+    private bool _removingTags;
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _subscriptions
+            : _subscriptions.Where(s =>
+                s.DisplayName.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.TenantId.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loadingSubscriptions = true;
+        _loadError = null;
+        _selectedSubscription = null;
+        _policyAssignments.Clear();
+        _resourceGroups.Clear();
+        _selectedResourceGroups.Clear();
+        StateHasChanged();
+
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load subscriptions: {ex.Message}";
+        }
+        finally
+        {
+            _loadingSubscriptions = false;
+        }
+    }
+
+    private async Task OnSubscriptionSelected(TenantSubscription subscription)
+    {
+        _selectedSubscription = subscription;
+        _policyAssignments.Clear();
+        _resourceGroups.Clear();
+        _selectedResourceGroups.Clear();
+        _tagResults.Clear();
+        _policyResult = null;
+
+        if (subscription is null) return;
+
+        await Task.WhenAll(LoadPolicies(), LoadResourceGroups());
+    }
+
+    // --- Tenant management ---
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect Tenant", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            TenantClientManager.ConnectTenant(tenantId);
+            Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+
+    // --- Tab 1: Policy operations ---
+
+    private async Task LoadPolicies()
+    {
+        if (_selectedSubscription is null) return;
+
+        _loadingPolicies = true;
+        StateHasChanged();
+
+        try
+        {
+            _policyAssignments = (await PolicyService.GetTagInheritancePolicyAssignmentsAsync(_selectedSubscription)).ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load policies: {ex.Message}", Severity.Error);
+            _policyAssignments.Clear();
+        }
+        finally
+        {
+            _loadingPolicies = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AssignPolicy()
+    {
+        if (_selectedSubscription is null) return;
+        if (string.IsNullOrWhiteSpace(_tagNameForPolicy))
+        {
+            Snackbar.Add("Enter a tag name first.", Severity.Warning);
+            return;
+        }
+
+        _policyResult = null;
+        StateHasChanged();
+
+        var trimmedValue = string.IsNullOrWhiteSpace(_tagValueForPolicy) ? null : _tagValueForPolicy.Trim();
+        _policyResult = await PolicyService.AssignTagInheritancePolicyAsync(
+            _selectedSubscription, _tagNameForPolicy.Trim(), trimmedValue);
+
+        if (_policyResult.Success)
+        {
+            _tagNameForPolicy = string.Empty;
+            _tagValueForPolicy = string.Empty;
+            await LoadPolicies();
+        }
+    }
+
+    private async Task RemovePolicy(string assignmentName)
+    {
+        if (_selectedSubscription is null) return;
+
+        _policyResult = await PolicyService.RemovePolicyAssignmentAsync(
+            _selectedSubscription, assignmentName);
+
+        if (_policyResult.Success)
+        {
+            await LoadPolicies();
+        }
+    }
+
+    // --- Tab 2: Remove tags operations ---
+
+    private async Task LoadResourceGroups()
+    {
+        if (_selectedSubscription is null) return;
+
+        _loadingResourceGroups = true;
+        _rgLoadError = null;
+        _selectedResourceGroups.Clear();
+        _availableTagKeys.Clear();
+        _selectedTagKeys = [];
+        StateHasChanged();
+
+        try
+        {
+            _resourceGroups = (await TaggingService.GetResourceGroupsAsync(_selectedSubscription)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _rgLoadError = $"Failed to load resource groups: {ex.Message}";
+            _resourceGroups.Clear();
+        }
+        finally
+        {
+            _loadingResourceGroups = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnTagKeysChanged(IReadOnlyCollection<string> values)
+    {
+        _selectedTagKeys = values;
+    }
+
+    // Recalculate available tag keys whenever RG selection changes
+    // MudTable bind triggers re-render, so we compute in a property-like fashion
+    private List<string> ComputeAvailableTagKeys()
+    {
+        return _selectedResourceGroups
+            .SelectMany(rg => rg.Tags.Keys)
+            .Distinct()
+            .OrderBy(k => k)
+            .ToList();
+    }
+
+    protected override void OnParametersSet()
+    {
+        _availableTagKeys = ComputeAvailableTagKeys();
+    }
+
+    protected override bool ShouldRender()
+    {
+        _availableTagKeys = ComputeAvailableTagKeys();
+        return true;
+    }
+
+    private async Task RemoveTags()
+    {
+        if (_removingTags) return;
+        if (_selectedSubscription is null || _selectedResourceGroups.Count == 0)
+        {
+            Snackbar.Add("Select at least one resource group first.", Severity.Warning);
+            return;
+        }
+        if (_selectedTagKeys.Count == 0)
+        {
+            Snackbar.Add("Select at least one tag to remove.", Severity.Warning);
+            return;
+        }
+
+        _removingTags = true;
+        _tagResults.Clear();
+        StateHasChanged();
+
+        try
+        {
+            var allResults = await TaggingService.RemoveTagsAsync(
+                _selectedSubscription,
+                _selectedResourceGroups,
+                _selectedTagKeys,
+                onProgress: r =>
+                {
+                    InvokeAsync(() =>
+                    {
+                        _tagResults.Add(r);
+                        StateHasChanged();
+                    });
+                });
+
+            var succeeded = allResults.Count(r => r.Success);
+            var failed = allResults.Count(r => !r.Success);
+
+            if (failed == 0)
+                Snackbar.Add($"Tags removed from all {succeeded} resource(s)", Severity.Success);
+            else
+                Snackbar.Add($"{succeeded} succeeded, {failed} failed", Severity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error removing tags: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _removingTags = false;
+            await LoadResourceGroups();
+        }
+    }
+
+    private static Color GetStateColor(string? state) => state switch
+    {
+        "Enabled" => Color.Success,
+        "Disabled" => Color.Error,
+        "Warned" => Color.Warning,
+        _ => Color.Default
+    };
+}

@@ -31,8 +31,8 @@
 </MudPaper>
 
 <MudTable T="TenantSubscription" Items="@_filteredSubscriptions" MultiSelection="true"
-          @bind-SelectedItems="_selectedSubscriptions" Loading="@_loading" Hover="true"
-          Dense="true" Elevation="2">
+          SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSelectedSubscriptionsChanged"
+          Loading="@_loading" Hover="true" Dense="true" Elevation="2">
     <ToolBarContent>
         <MudText Typo="Typo.h6">Subscriptions</MudText>
         <MudSpacer />
@@ -84,7 +84,7 @@
 
 @if (_results.Count > 0)
 {
-    <MudText Typo="Typo.h6" Class="mt-6 mb-2">Budget Creation Results</MudText>
+    <MudText Typo="Typo.h6" Class="mt-4 mb-2">Budget Creation Results</MudText>
     <MudTable T="BudgetCreationResult" Items="@_results" Hover="true" Dense="true" Elevation="2">
         <HeaderContent>
             <MudTh>Subscription</MudTh>
@@ -112,11 +112,73 @@
     </MudTable>
 }
 
+@if (_selectedSubscriptions.Count > 0)
+{
+    <MudTable T="BudgetInfo" Items="@_existingBudgets" Loading="@_loadingBudgets"
+              Hover="true" Dense="true" Elevation="2" Class="mt-4">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Existing Budgets</MudText>
+            <MudSpacer />
+            <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadExistingBudgets">
+                Refresh
+            </MudButton>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Subscription</MudTh>
+            <MudTh><MudTableSortLabel T="BudgetInfo" SortBy="@(new Func<BudgetInfo, object>(x => x.Name))">Name</MudTableSortLabel></MudTh>
+            <MudTh>Amount</MudTh>
+            <MudTh>Current Spend</MudTh>
+            <MudTh>Time Grain</MudTh>
+            <MudTh>Start Date</MudTh>
+            <MudTh>End Date</MudTh>
+            <MudTh>Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Subscription">@context.SubscriptionName</MudTd>
+            <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="Amount">@(context.Amount?.ToString("C2"))</MudTd>
+            <MudTd DataLabel="Current Spend">
+                @if (context.CurrentSpend.HasValue && context.Amount.HasValue && context.Amount.Value > 0)
+                {
+                    var pct = context.CurrentSpend.Value / context.Amount.Value * 100;
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText Typo="Typo.body2">@context.CurrentSpend.Value.ToString("C2")</MudText>
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(pct > 90 ? Color.Error : pct > 70 ? Color.Warning : Color.Success)">
+                            @pct.ToString("F0")%
+                        </MudChip>
+                    </MudStack>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">@(context.CurrentSpend?.ToString("C2") ?? "-")</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Time Grain">@context.TimeGrain</MudTd>
+            <MudTd DataLabel="Start Date">@(context.StartDate?.ToString("dd MMM yyyy") ?? "-")</MudTd>
+            <MudTd DataLabel="End Date">@(context.EndDate?.ToString("dd MMM yyyy") ?? "-")</MudTd>
+            <MudTd DataLabel="Actions">
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                               Size="Size.Small" OnClick="@(() => DeleteBudget(context))" />
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No existing budgets found for the selected subscription(s).</MudText>
+        </NoRecordsContent>
+        <LoadingContent>
+            <MudText>Loading budgets...</MudText>
+        </LoadingContent>
+    </MudTable>
+}
+
 @code {
     private List<TenantSubscription> _subscriptions = [];
     private HashSet<TenantSubscription> _selectedSubscriptions = [];
     private List<BudgetCreationResult> _results = [];
+    private List<BudgetInfo> _existingBudgets = [];
     private bool _loading = true;
+    private bool _loadingBudgets;
     private bool _creating;
     private string? _loadError;
     private string _searchText = string.Empty;
@@ -177,6 +239,44 @@
         await LoadSubscriptions();
     }
 
+    private async Task OnSelectedSubscriptionsChanged(HashSet<TenantSubscription> selected)
+    {
+        _selectedSubscriptions = selected;
+        _existingBudgets.Clear();
+
+        if (selected.Count > 0)
+        {
+            await LoadExistingBudgets();
+        }
+    }
+
+    private async Task LoadExistingBudgets()
+    {
+        _loadingBudgets = true;
+        StateHasChanged();
+
+        try
+        {
+            var allBudgets = new List<BudgetInfo>();
+            foreach (var sub in _selectedSubscriptions)
+            {
+                var budgets = await BudgetService.GetBudgetsAsync(sub);
+                allBudgets.AddRange(budgets);
+            }
+            _existingBudgets = allBudgets;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load budgets: {ex.Message}", Severity.Error);
+            _existingBudgets.Clear();
+        }
+        finally
+        {
+            _loadingBudgets = false;
+            StateHasChanged();
+        }
+    }
+
     private async Task OpenCreateBudgetDialog()
     {
         var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
@@ -213,7 +313,29 @@
             finally
             {
                 _creating = false;
+                await LoadExistingBudgets();
             }
+        }
+    }
+
+    private async Task DeleteBudget(BudgetInfo budget)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete Budget",
+            $"Are you sure you want to delete budget '{budget.Name}' from {budget.SubscriptionName}?",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (confirm != true) return;
+
+        try
+        {
+            await BudgetService.DeleteBudgetAsync(budget);
+            Snackbar.Add($"Budget '{budget.Name}' deleted", Severity.Success);
+            await LoadExistingBudgets();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to delete budget: {ex.Message}", Severity.Error);
         }
     }
 

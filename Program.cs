@@ -13,6 +13,7 @@ builder.Services.AddScoped<TenantClientManager>();
 builder.Services.AddScoped<IAzureSubscriptionService, AzureSubscriptionService>();
 builder.Services.AddScoped<IBudgetService, BudgetService>();
 builder.Services.AddScoped<IResourceTaggingService, ResourceTaggingService>();
+builder.Services.AddScoped<IPolicyService, PolicyService>();
 
 var app = builder.Build();
 

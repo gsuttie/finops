@@ -11,4 +11,10 @@ public interface IResourceTaggingService
         IEnumerable<ResourceGroupInfo> resourceGroups,
         IReadOnlyDictionary<string, string> tags,
         Action<TagOperationResult>? onProgress = null);
+
+    Task<IReadOnlyList<TagOperationResult>> RemoveTagsAsync(
+        TenantSubscription subscription,
+        IEnumerable<ResourceGroupInfo> resourceGroups,
+        IEnumerable<string> tagKeys,
+        Action<TagOperationResult>? onProgress = null);
 }

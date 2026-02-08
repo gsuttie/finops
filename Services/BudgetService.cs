@@ -8,6 +8,33 @@ namespace FinOps.Services;
 
 public class BudgetService(TenantClientManager tenantClientManager) : IBudgetService
 {
+    public async Task<IReadOnlyList<BudgetInfo>> GetBudgetsAsync(TenantSubscription subscription)
+    {
+        var client = tenantClientManager.GetClientForTenant(subscription.TenantId);
+        var resourceId = SubscriptionResource.CreateResourceIdentifier(subscription.SubscriptionId);
+        var budgets = client.GetConsumptionBudgets(resourceId);
+
+        var results = new List<BudgetInfo>();
+
+        await foreach (var budget in budgets.GetAllAsync())
+        {
+            results.Add(new BudgetInfo
+            {
+                Name = budget.Data.Name,
+                SubscriptionName = subscription.DisplayName,
+                SubscriptionId = subscription.SubscriptionId,
+                TenantId = subscription.TenantId,
+                Amount = budget.Data.Amount,
+                TimeGrain = budget.Data.TimeGrain?.ToString(),
+                StartDate = budget.Data.TimePeriod?.StartOn,
+                EndDate = budget.Data.TimePeriod?.EndOn,
+                CurrentSpend = budget.Data.CurrentSpend?.Amount
+            });
+        }
+
+        return results;
+    }
+
     public async Task<IReadOnlyList<BudgetCreationResult>> CreateBudgetForSubscriptionsAsync(
         IEnumerable<TenantSubscription> subscriptions,
         BudgetFormModel form)
@@ -60,6 +87,15 @@ public class BudgetService(TenantClientManager tenantClientManager) : IBudgetSer
         }
 
         return results;
+    }
+
+    public async Task DeleteBudgetAsync(BudgetInfo budget)
+    {
+        var client = tenantClientManager.GetClientForTenant(budget.TenantId);
+        var resourceId = SubscriptionResource.CreateResourceIdentifier(budget.SubscriptionId);
+        var budgets = client.GetConsumptionBudgets(resourceId);
+        var existing = await budgets.GetAsync(budget.Name);
+        await existing.Value.DeleteAsync(WaitUntil.Completed);
     }
 
     private static BudgetTimeGrainType ParseTimeGrain(string timeGrain) => timeGrain switch
