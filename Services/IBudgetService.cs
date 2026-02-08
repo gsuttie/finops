@@ -10,5 +10,13 @@ public interface IBudgetService
         IEnumerable<TenantSubscription> subscriptions,
         BudgetFormModel form);
 
+    Task<IReadOnlyList<BudgetInfo>> GetBudgetsForResourceGroupAsync(
+        TenantSubscription subscription, ResourceGroupInfo resourceGroup);
+
+    Task<IReadOnlyList<BudgetCreationResult>> CreateBudgetForResourceGroupsAsync(
+        TenantSubscription subscription,
+        IEnumerable<ResourceGroupInfo> resourceGroups,
+        BudgetFormModel form);
+
     Task DeleteBudgetAsync(BudgetInfo budget);
 }
