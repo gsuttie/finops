@@ -183,6 +183,9 @@
     private string? _loadError;
     private string _searchText = string.Empty;
 
+    /// <summary>
+    /// Filters subscriptions by display name, subscription ID, tenant name, or tenant ID based on the search text.
+    /// </summary>
     private IEnumerable<TenantSubscription> _filteredSubscriptions =>
         string.IsNullOrWhiteSpace(_searchText)
             ? _subscriptions
@@ -192,11 +195,16 @@
                 (s.TenantDisplayName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 s.TenantId.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
 
+    /// <inheritdoc />
     protected override async Task OnInitializedAsync()
     {
         await LoadSubscriptions();
     }
 
+    /// <summary>
+    /// Loads all subscriptions from the home tenant and any connected tenants.
+    /// Clears the current selection and resets error state.
+    /// </summary>
     private async Task LoadSubscriptions()
     {
         _loading = true;
@@ -218,6 +226,9 @@
         }
     }
 
+    /// <summary>
+    /// Opens the Connect Tenant dialog and, on success, registers the new tenant and reloads subscriptions.
+    /// </summary>
     private async Task OpenConnectTenantDialog()
     {
         var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
@@ -232,6 +243,10 @@
         }
     }
 
+    /// <summary>
+    /// Removes a connected tenant and reloads the subscription list.
+    /// </summary>
+    /// <param name="tenantId">The Azure AD tenant ID to disconnect.</param>
     private async Task DisconnectTenant(string tenantId)
     {
         TenantClientManager.DisconnectTenant(tenantId);
@@ -239,6 +254,10 @@
         await LoadSubscriptions();
     }
 
+    /// <summary>
+    /// Handles subscription table selection changes; loads existing budgets for the newly selected subscriptions.
+    /// </summary>
+    /// <param name="selected">The updated set of selected subscriptions.</param>
     private async Task OnSelectedSubscriptionsChanged(HashSet<TenantSubscription> selected)
     {
         _selectedSubscriptions = selected;
@@ -250,6 +269,9 @@
         }
     }
 
+    /// <summary>
+    /// Retrieves existing Azure Consumption budgets for all currently selected subscriptions.
+    /// </summary>
     private async Task LoadExistingBudgets()
     {
         _loadingBudgets = true;
@@ -277,6 +299,10 @@
         }
     }
 
+    /// <summary>
+    /// Opens the Create Budget dialog and applies the budget to all selected subscriptions on confirmation.
+    /// Displays per-subscription results and refreshes the existing budgets table.
+    /// </summary>
     private async Task OpenCreateBudgetDialog()
     {
         var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
@@ -318,6 +344,10 @@
         }
     }
 
+    /// <summary>
+    /// Prompts the user for confirmation, then deletes the specified budget from Azure.
+    /// </summary>
+    /// <param name="budget">The budget to delete.</param>
     private async Task DeleteBudget(BudgetInfo budget)
     {
         var confirm = await DialogService.ShowMessageBox(
@@ -339,6 +369,9 @@
         }
     }
 
+    /// <summary>
+    /// Maps a subscription state string to a MudBlazor color for visual indication.
+    /// </summary>
     private static Color GetStateColor(string? state) => state switch
     {
         "Enabled" => Color.Success,

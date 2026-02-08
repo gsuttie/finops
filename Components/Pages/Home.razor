@@ -2,7 +2,173 @@
 
 <PageTitle>FinOps</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-4">FinOps Dashboard</MudText>
-<MudText Typo="Typo.body1">
-    Manage budgets across your Azure subscriptions. Navigate to <MudLink Href="budgets">Budgets</MudLink> to get started.
-</MudText>
+<style>
+    @@keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    @@keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+    @@keyframes glow {
+        0%, 100% { text-shadow: 0 0 5px rgba(99, 102, 241, 0.3); }
+        50% { text-shadow: 0 0 20px rgba(99, 102, 241, 0.6), 0 0 40px rgba(99, 102, 241, 0.3); }
+    }
+    @@keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0; }
+    }
+    @@keyframes slideInLeft {
+        from { opacity: 0; transform: translateX(-40px); }
+        to { opacity: 1; transform: translateX(0); }
+    }
+    @@keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+    }
+
+    .ascii-art {
+        font-family: 'Courier New', monospace;
+        font-size: 14px;
+        line-height: 1.2;
+        color: #6366f1;
+        white-space: pre;
+        animation: fadeIn 1.5s ease-out, glow 3s ease-in-out infinite;
+        text-align: center;
+    }
+
+    .typewriter {
+        overflow: hidden;
+        white-space: nowrap;
+        border-right: 3px solid #6366f1;
+        animation: typing 2.5s steps(45, end) 1s forwards, blinkCaret 0.75s step-end infinite;
+        width: 0;
+        max-width: fit-content;
+    }
+    @@keyframes typing {
+        from { width: 0; }
+        to { width: 100%; }
+    }
+    @@keyframes blinkCaret {
+        0%, 100% { border-color: #6366f1; }
+        50% { border-color: transparent; }
+    }
+
+    .feature-card {
+        animation: fadeInUp 0.6s ease-out both;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        cursor: pointer;
+    }
+    .feature-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15) !important;
+    }
+    .feature-card:nth-child(1) { animation-delay: 1.5s; }
+    .feature-card:nth-child(2) { animation-delay: 1.7s; }
+    .feature-card:nth-child(3) { animation-delay: 1.9s; }
+    .feature-card:nth-child(4) { animation-delay: 2.1s; }
+
+    .built-with {
+        animation: fadeIn 1s ease-out 2.5s both;
+    }
+
+</style>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+
+    @* ASCII Art Header *@
+    <MudPaper Elevation="0" Class="pa-4 mb-6 d-flex justify-center" Style="background: transparent;">
+        <div class="ascii-art">
+ _____ _        ___
+|  ___(_)_ __  / _ \ _ __  ___
+| |_  | | '_ \| | | | '_ \/ __|
+|  _| | | | | | |_| | |_) \__ \
+|_|   |_|_| |_|\___/| .__/|___/
+                     |_|
+        </div>
+    </MudPaper>
+
+    @* Typewriter tagline *@
+    <div class="d-flex justify-center mb-8">
+        <MudText Typo="Typo.h5" Class="typewriter" Style="color: var(--mud-palette-text-secondary);">
+            Azure cost management across every tenant.
+        </MudText>
+    </div>
+
+    @* Feature cards *@
+    <MudGrid Spacing="4" Class="mb-8">
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Class="feature-card" Style="border-top: 3px solid #4caf50;" @onclick='() => Nav.NavigateTo("budgets")'>
+                <MudCardContent Class="text-center pa-6">
+                    <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Large" Color="Color.Success" Class="mb-3" />
+                    <MudText Typo="Typo.h6">Budgets</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                        Create & monitor budgets across subscriptions
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Class="feature-card" Style="border-top: 3px solid #2196f3;" @onclick='() => Nav.NavigateTo("tagging")'>
+                <MudCardContent Class="text-center pa-6">
+                    <MudIcon Icon="@Icons.Material.Filled.Label" Size="Size.Large" Color="Color.Info" Class="mb-3" />
+                    <MudText Typo="Typo.h6">Tagging</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                        Apply & remove tags on resource groups at scale
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Class="feature-card" Style="border-top: 3px solid #ff9800;" @onclick='() => Nav.NavigateTo("policy")'>
+                <MudCardContent Class="text-center pa-6">
+                    <MudIcon Icon="@Icons.Material.Filled.Policy" Size="Size.Large" Color="Color.Warning" Class="mb-3" />
+                    <MudText Typo="Typo.h6">Policy</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                        Tag inheritance policies with auto identity setup
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudCard Class="feature-card" Style="border-top: 3px solid #9c27b0;">
+                <MudCardContent Class="text-center pa-6">
+                    <MudIcon Icon="@Icons.Material.Filled.Hub" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+                    <MudText Typo="Typo.h6">Multi-Tenant</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                        Lighthouse + connect tenants in one view
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+
+    @* Tech stack bar *@
+    <MudPaper Elevation="1" Class="pa-4 mb-6 built-with" Style="border-radius: 12px;">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.Center" Spacing="3" Class="flex-wrap">
+            <MudText Typo="Typo.body2" Color="Color.Secondary">Built with</MudText>
+            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small">.NET 10</MudChip>
+            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small">Blazor Server</MudChip>
+            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small">MudBlazor</MudChip>
+            <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small">Azure ARM SDK</MudChip>
+        </MudStack>
+    </MudPaper>
+
+    @* ASCII footer art *@
+    <div class="d-flex justify-center mb-4 built-with">
+        <MudText Typo="Typo.body2" Style="font-family: 'Courier New', monospace; color: var(--mud-palette-text-disabled); white-space: pre; text-align: center; font-size: 11px; line-height: 1.3;">
+    +--------------------------------------------------+
+    |  &gt; az login                                       |
+    |  &gt; dotnet run                                     |
+    |  &gt; Managing costs like a boss since 2025   $$$    |
+    +--------------------------------------------------+
+        </MudText>
+    </div>
+
+</MudContainer>
+
+@code {
+    [Inject]
+    private NavigationManager Nav { get; set; } = null!;
+}

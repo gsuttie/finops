@@ -197,6 +197,9 @@
     private string? _rgLoadError;
     private string _searchText = string.Empty;
 
+    /// <summary>
+    /// Filters subscriptions by display name, subscription ID, tenant name, or tenant ID based on the search text.
+    /// </summary>
     private IEnumerable<TenantSubscription> _filteredSubscriptions =>
         string.IsNullOrWhiteSpace(_searchText)
             ? _subscriptions
@@ -206,11 +209,16 @@
                 (s.TenantDisplayName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 s.TenantId.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
 
+    /// <inheritdoc />
     protected override async Task OnInitializedAsync()
     {
         await LoadSubscriptions();
     }
 
+    /// <summary>
+    /// Loads all subscriptions from the home tenant and any connected tenants.
+    /// Resets selection and resource group state.
+    /// </summary>
     private async Task LoadSubscriptions()
     {
         _loadingSubscriptions = true;
@@ -234,6 +242,10 @@
         }
     }
 
+    /// <summary>
+    /// Handles subscription row selection; loads resource groups for the selected subscription.
+    /// </summary>
+    /// <param name="subscription">The subscription the user clicked on.</param>
     private async Task OnSubscriptionSelected(TenantSubscription subscription)
     {
         _selectedSubscription = subscription;
@@ -261,6 +273,9 @@
         }
     }
 
+    /// <summary>
+    /// Opens the Connect Tenant dialog and, on success, registers the new tenant and reloads subscriptions.
+    /// </summary>
     private async Task OpenConnectTenantDialog()
     {
         var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
@@ -275,6 +290,10 @@
         }
     }
 
+    /// <summary>
+    /// Removes a connected tenant and reloads the subscription list.
+    /// </summary>
+    /// <param name="tenantId">The Azure AD tenant ID to disconnect.</param>
     private async Task DisconnectTenant(string tenantId)
     {
         TenantClientManager.DisconnectTenant(tenantId);
@@ -282,6 +301,10 @@
         await LoadSubscriptions();
     }
 
+    /// <summary>
+    /// Opens the Apply Tags dialog and merges the submitted tags onto all selected resource groups.
+    /// Reports per-resource progress in real time and reloads resource groups on completion.
+    /// </summary>
     private async Task OpenApplyTagsDialog()
     {
         if (_applying) return;
@@ -337,6 +360,9 @@
         }
     }
 
+    /// <summary>
+    /// Reloads the resource groups for the currently selected subscription to refresh tag data.
+    /// </summary>
     private async Task ReloadResourceGroups()
     {
         if (_selectedSubscription is null) return;
@@ -359,6 +385,9 @@
         }
     }
 
+    /// <summary>
+    /// Maps a subscription state string to a MudBlazor color for visual indication.
+    /// </summary>
     private static Color GetStateColor(string? state) => state switch
     {
         "Enabled" => Color.Success,

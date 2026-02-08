@@ -14,18 +14,30 @@
 </MudDialog>
 
 @code {
+    /// <summary>
+    /// The MudDialog instance provided by the MudBlazor dialog system.
+    /// </summary>
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
     private string _tenantId = string.Empty;
     private string? _validationError;
 
+    /// <summary>
+    /// Compiled regex for validating GUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
+    /// </summary>
     private static readonly Regex GuidRegex = new(
         @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
         RegexOptions.Compiled);
 
+    /// <summary>
+    /// Cancels the dialog without returning a result.
+    /// </summary>
     private void Cancel() => MudDialog.Cancel();
 
+    /// <summary>
+    /// Validates the tenant ID as a well-formed GUID and closes the dialog with the lowercase tenant ID on success.
+    /// </summary>
     private void Submit()
     {
         _validationError = null;
@@ -45,6 +57,9 @@
         MudDialog.Close(DialogResult.Ok(_tenantId.Trim().ToLowerInvariant()));
     }
 
+    /// <summary>
+    /// Submits the form when the user presses Enter in the text field.
+    /// </summary>
     private void OnKeyUp(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")

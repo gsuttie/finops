@@ -49,24 +49,41 @@
 </MudDialog>
 
 @code {
+    /// <summary>
+    /// The MudDialog instance provided by the MudBlazor dialog system.
+    /// </summary>
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
     private readonly TagFormModel _model = new();
     private string? _validationError;
 
+    /// <summary>
+    /// Appends a new empty tag key/value row to the form.
+    /// </summary>
     private void AddTag()
     {
         _model.Tags.Add(new TagEntry());
     }
 
+    /// <summary>
+    /// Removes the tag entry at the specified index.
+    /// </summary>
+    /// <param name="index">Zero-based index of the tag row to remove.</param>
     private void RemoveTag(int index)
     {
         _model.Tags.RemoveAt(index);
     }
 
+    /// <summary>
+    /// Cancels the dialog without returning a result.
+    /// </summary>
     private void Cancel() => MudDialog.Cancel();
 
+    /// <summary>
+    /// Validates the tag entries (no empty keys, no duplicates, within Azure tag limits)
+    /// and closes the dialog with a dictionary of tag key/value pairs on success.
+    /// </summary>
     private void Submit()
     {
         _validationError = null;

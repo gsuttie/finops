@@ -331,6 +331,9 @@
     private List<TagOperationResult> _tagResults = [];
     private bool _removingTags;
 
+    /// <summary>
+    /// Filters subscriptions by display name, subscription ID, tenant name, or tenant ID based on the search text.
+    /// </summary>
     private IEnumerable<TenantSubscription> _filteredSubscriptions =>
         string.IsNullOrWhiteSpace(_searchText)
             ? _subscriptions
@@ -340,11 +343,16 @@
                 (s.TenantDisplayName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
                 s.TenantId.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
 
+    /// <inheritdoc />
     protected override async Task OnInitializedAsync()
     {
         await LoadSubscriptions();
     }
 
+    /// <summary>
+    /// Loads all subscriptions from the home tenant and any connected tenants.
+    /// Resets all tab state (policies, resource groups, results).
+    /// </summary>
     private async Task LoadSubscriptions()
     {
         _loadingSubscriptions = true;
@@ -369,6 +377,10 @@
         }
     }
 
+    /// <summary>
+    /// Handles subscription row selection; loads both policy assignments and resource groups in parallel.
+    /// </summary>
+    /// <param name="subscription">The subscription the user clicked on.</param>
     private async Task OnSubscriptionSelected(TenantSubscription subscription)
     {
         _selectedSubscription = subscription;
@@ -385,6 +397,9 @@
 
     // --- Tenant management ---
 
+    /// <summary>
+    /// Opens the Connect Tenant dialog and, on success, registers the new tenant and reloads subscriptions.
+    /// </summary>
     private async Task OpenConnectTenantDialog()
     {
         var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
@@ -399,6 +414,10 @@
         }
     }
 
+    /// <summary>
+    /// Removes a connected tenant and reloads the subscription list.
+    /// </summary>
+    /// <param name="tenantId">The Azure AD tenant ID to disconnect.</param>
     private async Task DisconnectTenant(string tenantId)
     {
         TenantClientManager.DisconnectTenant(tenantId);
@@ -408,6 +427,9 @@
 
     // --- Tab 1: Policy operations ---
 
+    /// <summary>
+    /// Loads existing tag inheritance policy assignments for the selected subscription.
+    /// </summary>
     private async Task LoadPolicies()
     {
         if (_selectedSubscription is null) return;
@@ -431,6 +453,10 @@
         }
     }
 
+    /// <summary>
+    /// Creates a tag inheritance policy assignment on the selected subscription for the specified tag name and optional value.
+    /// Clears the form and reloads policies on success.
+    /// </summary>
     private async Task AssignPolicy()
     {
         if (_selectedSubscription is null) return;
@@ -455,6 +481,10 @@
         }
     }
 
+    /// <summary>
+    /// Deletes a policy assignment by name from the selected subscription and refreshes the policy list.
+    /// </summary>
+    /// <param name="assignmentName">The Azure resource name of the policy assignment to remove.</param>
     private async Task RemovePolicy(string assignmentName)
     {
         if (_selectedSubscription is null) return;
@@ -470,6 +500,9 @@
 
     // --- Tab 2: Remove tags operations ---
 
+    /// <summary>
+    /// Loads resource groups for the selected subscription. Resets resource group selection and available tag keys.
+    /// </summary>
     private async Task LoadResourceGroups()
     {
         if (_selectedSubscription is null) return;
@@ -497,13 +530,19 @@
         }
     }
 
+    /// <summary>
+    /// Updates the selected tag keys when the user toggles tag chips in the Remove Tags tab.
+    /// </summary>
+    /// <param name="values">The currently selected tag key names.</param>
     private void OnTagKeysChanged(IReadOnlyCollection<string> values)
     {
         _selectedTagKeys = values;
     }
 
-    // Recalculate available tag keys whenever RG selection changes
-    // MudTable bind triggers re-render, so we compute in a property-like fashion
+    /// <summary>
+    /// Computes the distinct, sorted list of tag keys present across all selected resource groups.
+    /// </summary>
+    /// <returns>An alphabetically sorted list of unique tag key names.</returns>
     private List<string> ComputeAvailableTagKeys()
     {
         return _selectedResourceGroups
@@ -513,17 +552,23 @@
             .ToList();
     }
 
+    /// <inheritdoc />
     protected override void OnParametersSet()
     {
         _availableTagKeys = ComputeAvailableTagKeys();
     }
 
+    /// <inheritdoc />
     protected override bool ShouldRender()
     {
         _availableTagKeys = ComputeAvailableTagKeys();
         return true;
     }
 
+    /// <summary>
+    /// Removes the selected tag keys from all selected resource groups.
+    /// Reports per-resource progress in real time and reloads resource groups on completion.
+    /// </summary>
     private async Task RemoveTags()
     {
         if (_removingTags) return;
@@ -576,6 +621,9 @@
         }
     }
 
+    /// <summary>
+    /// Maps a subscription state string to a MudBlazor color for visual indication.
+    /// </summary>
     private static Color GetStateColor(string? state) => state switch
     {
         "Enabled" => Color.Success,

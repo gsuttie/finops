@@ -57,15 +57,27 @@
 </MudDialog>
 
 @code {
+    /// <summary>
+    /// The MudDialog instance provided by the MudBlazor dialog system.
+    /// </summary>
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
     private MudForm _form = null!;
     private bool _isValid;
 
+    /// <summary>
+    /// The form model bound to the budget creation fields (name, amount, time grain, dates).
+    /// </summary>
     public BudgetFormModel Model { get; set; } = new();
 
+    /// <summary>
+    /// Cancels the dialog without returning a result.
+    /// </summary>
     private void Cancel() => MudDialog.Cancel();
 
+    /// <summary>
+    /// Closes the dialog and returns the populated <see cref="BudgetFormModel"/> to the caller.
+    /// </summary>
     private void Submit() => MudDialog.Close(DialogResult.Ok(Model));
 }
