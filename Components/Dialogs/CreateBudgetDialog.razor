@@ -46,6 +46,82 @@
                            Clearable="true"
                            DateFormat="yyyy-MM-dd" />
         </MudForm>
+
+        <MudDivider Class="my-4" />
+
+        <MudText Typo="Typo.subtitle1" Class="mb-2">
+            <MudIcon Icon="@Icons.Material.Filled.Email" Class="mr-1" Style="vertical-align: middle;" />
+            Email Alerts (optional)
+        </MudText>
+
+        @for (int i = 0; i < Model.AlertEmails.Count; i++)
+        {
+            var index = i;
+            <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-1">
+                <MudTextField T="string" Value="@Model.AlertEmails[index]"
+                              ValueChanged="@(v => Model.AlertEmails[index] = v)"
+                              Label="@($"Email {index + 1}")"
+                              Immediate="true"
+                              Style="flex: 1;" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                               Color="Color.Error"
+                               Size="Size.Small"
+                               OnClick="@(() => RemoveEmail(index))" />
+            </MudStack>
+        }
+
+        <MudButton StartIcon="@Icons.Material.Filled.Add"
+                   Color="Color.Primary"
+                   Variant="Variant.Text"
+                   Size="Size.Small"
+                   OnClick="AddEmail"
+                   Class="mb-2">
+            Add email address
+        </MudButton>
+
+        @if (Model.AlertEmails.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-2 mb-2">Alert Thresholds</MudText>
+
+            @for (int i = 0; i < Model.AlertThresholds.Count; i++)
+            {
+                var index = i;
+                <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-1">
+                    <MudNumericField T="decimal?" @bind-Value="Model.AlertThresholds[index].Percentage"
+                                     Label="Threshold %"
+                                     Min="1m"
+                                     Max="1000m"
+                                     Immediate="true"
+                                     Style="flex: 1;" />
+                    <MudSelect T="string" @bind-Value="Model.AlertThresholds[index].ThresholdType"
+                               Label="Type"
+                               Style="flex: 1;">
+                        <MudSelectItem T="string" Value="@("Actual")">Actual</MudSelectItem>
+                        <MudSelectItem T="string" Value="@("Forecasted")">Forecasted</MudSelectItem>
+                    </MudSelect>
+                    @if (Model.AlertThresholds.Count > 1)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                       Color="Color.Error"
+                                       Size="Size.Small"
+                                       OnClick="@(() => RemoveThreshold(index))" />
+                    }
+                </MudStack>
+            }
+
+            <MudButton StartIcon="@Icons.Material.Filled.Add"
+                       Color="Color.Primary"
+                       Variant="Variant.Text"
+                       Size="Size.Small"
+                       OnClick="AddThreshold">
+                Add threshold
+            </MudButton>
+        }
+
+        @if (!string.IsNullOrEmpty(_validationError))
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-2">@_validationError</MudAlert>
+        }
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancel</MudButton>
@@ -57,27 +133,83 @@
 </MudDialog>
 
 @code {
-    /// <summary>
-    /// The MudDialog instance provided by the MudBlazor dialog system.
-    /// </summary>
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
     private MudForm _form = null!;
     private bool _isValid;
+    private string? _validationError;
 
-    /// <summary>
-    /// The form model bound to the budget creation fields (name, amount, time grain, dates).
-    /// </summary>
     public BudgetFormModel Model { get; set; } = new();
 
-    /// <summary>
-    /// Cancels the dialog without returning a result.
-    /// </summary>
     private void Cancel() => MudDialog.Cancel();
 
-    /// <summary>
-    /// Closes the dialog and returns the populated <see cref="BudgetFormModel"/> to the caller.
-    /// </summary>
-    private void Submit() => MudDialog.Close(DialogResult.Ok(Model));
+    private void AddEmail()
+    {
+        Model.AlertEmails.Add(string.Empty);
+    }
+
+    private void RemoveEmail(int index)
+    {
+        Model.AlertEmails.RemoveAt(index);
+    }
+
+    private void AddThreshold()
+    {
+        Model.AlertThresholds.Add(new BudgetAlertThreshold { Percentage = 90, ThresholdType = "Actual" });
+    }
+
+    private void RemoveThreshold(int index)
+    {
+        Model.AlertThresholds.RemoveAt(index);
+    }
+
+    private void Submit()
+    {
+        _validationError = null;
+
+        // Strip empty email entries
+        Model.AlertEmails.RemoveAll(e => string.IsNullOrWhiteSpace(e));
+
+        if (Model.AlertEmails.Count > 0)
+        {
+            // Validate email format
+            foreach (var email in Model.AlertEmails)
+            {
+                if (!email.Contains('@') || !email.Contains('.'))
+                {
+                    _validationError = $"Invalid email address: {email}";
+                    return;
+                }
+            }
+
+            // Require at least one valid threshold
+            var validThresholds = Model.AlertThresholds
+                .Where(t => t.Percentage.HasValue && t.Percentage >= 1)
+                .ToList();
+
+            if (validThresholds.Count == 0)
+            {
+                _validationError = "At least one threshold (>= 1%) is required when email alerts are configured.";
+                return;
+            }
+
+            // Check for duplicate threshold+type combinations
+            var duplicates = validThresholds
+                .GroupBy(t => (t.Percentage, t.ThresholdType))
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            if (duplicates.Count > 0)
+            {
+                _validationError = "Duplicate threshold and type combinations are not allowed.";
+                return;
+            }
+
+            // Keep only valid thresholds
+            Model.AlertThresholds = validThresholds;
+        }
+
+        MudDialog.Close(DialogResult.Ok(Model));
+    }
 }

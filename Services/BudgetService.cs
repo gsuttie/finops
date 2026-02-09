@@ -90,6 +90,8 @@ public class BudgetService(TenantClientManager tenantClientManager) : IBudgetSer
                     }
                 };
 
+                ApplyNotifications(budgetData, form);
+
                 var client = tenantClientManager.GetClientForTenant(subscription.TenantId);
                 var resourceId = ResourceGroupResource.CreateResourceIdentifier(
                     subscription.SubscriptionId, rg.Name);
@@ -147,6 +149,8 @@ public class BudgetService(TenantClientManager tenantClientManager) : IBudgetSer
                     }
                 };
 
+                ApplyNotifications(budgetData, form);
+
                 var client = tenantClientManager.GetClientForTenant(subscription.TenantId);
                 var resourceId = SubscriptionResource.CreateResourceIdentifier(subId);
                 var budgets = client.GetConsumptionBudgets(resourceId);
@@ -183,6 +187,41 @@ public class BudgetService(TenantClientManager tenantClientManager) : IBudgetSer
         var budgets = client.GetConsumptionBudgets(resourceId);
         var existing = await budgets.GetAsync(budget.Name);
         await existing.Value.DeleteAsync(WaitUntil.Completed);
+    }
+
+    private static void ApplyNotifications(ConsumptionBudgetData budgetData, BudgetFormModel form)
+    {
+        var emails = form.AlertEmails
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Select(e => e.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (emails.Count == 0)
+            return;
+
+        var validThresholds = form.AlertThresholds
+            .Where(t => t.Percentage.HasValue && t.Percentage >= 1)
+            .ToList();
+
+        for (int i = 0; i < validThresholds.Count; i++)
+        {
+            var threshold = validThresholds[i];
+            var thresholdType = threshold.ThresholdType == "Forecasted"
+                ? NotificationThresholdType.Forecasted
+                : NotificationThresholdType.Actual;
+
+            var notification = new BudgetAssociatedNotification(
+                isEnabled: true,
+                @operator: NotificationAlertTriggerType.GreaterThan,
+                threshold: threshold.Percentage!.Value,
+                contactEmails: emails)
+            {
+                ThresholdType = thresholdType
+            };
+
+            budgetData.Notifications[$"Notification{i + 1}"] = notification;
+        }
     }
 
     private static BudgetTimeGrainType ParseTimeGrain(string timeGrain) => timeGrain switch

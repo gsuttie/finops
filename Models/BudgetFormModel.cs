@@ -19,4 +19,13 @@ public class BudgetFormModel
     public DateTime? StartDate { get; set; } = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
 
     public DateTime? EndDate { get; set; }
+
+    public List<string> AlertEmails { get; set; } = new();
+
+    public List<BudgetAlertThreshold> AlertThresholds { get; set; } = new()
+    {
+        new BudgetAlertThreshold { Percentage = 50, ThresholdType = "Actual" },
+        new BudgetAlertThreshold { Percentage = 80, ThresholdType = "Actual" },
+        new BudgetAlertThreshold { Percentage = 100, ThresholdType = "Actual" }
+    };
 }
