@@ -37,8 +37,8 @@
 
 @* Subscription selection *@
 <MudTable T="TenantSubscription" Items="@_filteredSubscriptions" Loading="@_loadingSubscriptions"
-          Hover="true" Dense="true" Elevation="2"
-          SelectedItem="@_selectedSubscription" SelectedItemChanged="OnSubscriptionSelected">
+          Hover="true" Dense="true" Elevation="2" MultiSelection="true"
+          SelectedItems="@_selectedSubscriptions" SelectedItemsChanged="OnSubscriptionSelectionChanged">
     <ToolBarContent>
         <MudText Typo="Typo.h6">1. Select a Subscription</MudText>
         <MudSpacer />
@@ -47,16 +47,14 @@
                       IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
     </ToolBarContent>
     <HeaderContent>
-        <MudTh>Tenant</MudTh>
+        <MudTh>Tenant Id</MudTh>
         <MudTh><MudTableSortLabel T="TenantSubscription" SortBy="@(new Func<TenantSubscription, object>(x => x.DisplayName))">Name</MudTableSortLabel></MudTh>
         <MudTh>Subscription ID</MudTh>
         <MudTh>State</MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Tenant">
-            <MudChip T="string" Color="@(context.IsDefault ? Color.Primary : Color.Secondary)" Size="Size.Small">
-                @(context.TenantDisplayName ?? context.TenantId)
-            </MudChip>
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.TenantId</MudText>
         </MudTd>
         <MudTd DataLabel="Name">@context.DisplayName</MudTd>
         <MudTd DataLabel="Subscription ID">
@@ -309,7 +307,8 @@
 @code {
     // Shared state
     private List<TenantSubscription> _subscriptions = [];
-    private TenantSubscription? _selectedSubscription;
+    private HashSet<TenantSubscription> _selectedSubscriptions = [];
+    private TenantSubscription? _selectedSubscription => _selectedSubscriptions.Count == 1 ? _selectedSubscriptions.First() : null;
     private bool _loadingSubscriptions = true;
     private string? _loadError;
     private string _searchText = string.Empty;
@@ -357,7 +356,7 @@
     {
         _loadingSubscriptions = true;
         _loadError = null;
-        _selectedSubscription = null;
+        _selectedSubscriptions.Clear();
         _policyAssignments.Clear();
         _resourceGroups.Clear();
         _selectedResourceGroups.Clear();
@@ -378,19 +377,28 @@
     }
 
     /// <summary>
-    /// Handles subscription row selection; loads both policy assignments and resource groups in parallel.
+    /// Handles subscription selection changes; enforces single selection and loads policies and resource groups.
     /// </summary>
-    /// <param name="subscription">The subscription the user clicked on.</param>
-    private async Task OnSubscriptionSelected(TenantSubscription subscription)
+    private async Task OnSubscriptionSelectionChanged(HashSet<TenantSubscription> selected)
     {
-        _selectedSubscription = subscription;
+        // Enforce single selection: keep only the newly added item
+        if (selected.Count > 1)
+        {
+            var newItem = selected.Except(_selectedSubscriptions).FirstOrDefault();
+            _selectedSubscriptions = newItem is not null ? [newItem] : [];
+        }
+        else
+        {
+            _selectedSubscriptions = selected;
+        }
+
         _policyAssignments.Clear();
         _resourceGroups.Clear();
         _selectedResourceGroups.Clear();
         _tagResults.Clear();
         _policyResult = null;
 
-        if (subscription is null) return;
+        if (_selectedSubscription is null) return;
 
         await Task.WhenAll(LoadPolicies(), LoadResourceGroups());
     }

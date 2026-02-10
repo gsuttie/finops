@@ -46,16 +46,14 @@
         </MudButton>
     </ToolBarContent>
     <HeaderContent>
-        <MudTh>Tenant</MudTh>
+        <MudTh>Tenant Id</MudTh>
         <MudTh>Name</MudTh>
         <MudTh>Subscription ID</MudTh>
         <MudTh>State</MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Tenant">
-            <MudChip T="string" Color="@(context.IsDefault ? Color.Primary : Color.Secondary)" Size="Size.Small">
-                @(context.TenantDisplayName ?? context.TenantId)
-            </MudChip>
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.TenantId</MudText>
         </MudTd>
         <MudTd DataLabel="Name">@context.DisplayName</MudTd>
         <MudTd DataLabel="Subscription ID">

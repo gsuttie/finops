@@ -46,16 +46,14 @@
                       IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
     </ToolBarContent>
     <HeaderContent>
-        <MudTh>Tenant</MudTh>
+        <MudTh>Tenant Id</MudTh>
         <MudTh><MudTableSortLabel T="TenantSubscription" SortBy="@(new Func<TenantSubscription, object>(x => x.DisplayName))">Name</MudTableSortLabel></MudTh>
         <MudTh>Subscription ID</MudTh>
         <MudTh>State</MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Tenant">
-            <MudChip T="string" Color="@(context.IsDefault ? Color.Primary : Color.Secondary)" Size="Size.Small">
-                @(context.TenantDisplayName ?? context.TenantId)
-            </MudChip>
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.TenantId</MudText>
         </MudTd>
         <MudTd DataLabel="Name">@context.DisplayName</MudTd>
         <MudTd DataLabel="Subscription ID">
