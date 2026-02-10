@@ -189,6 +189,81 @@ public class BudgetService(TenantClientManager tenantClientManager) : IBudgetSer
         await existing.Value.DeleteAsync(WaitUntil.Completed);
     }
 
+    public async Task<BudgetFormModel> GetBudgetFormDataAsync(BudgetInfo budget)
+    {
+        var client = tenantClientManager.GetClientForTenant(budget.TenantId);
+        var resourceId = budget.ResourceGroupName is not null
+            ? ResourceGroupResource.CreateResourceIdentifier(budget.SubscriptionId, budget.ResourceGroupName)
+            : SubscriptionResource.CreateResourceIdentifier(budget.SubscriptionId);
+        var budgets = client.GetConsumptionBudgets(resourceId);
+        var existing = await budgets.GetAsync(budget.Name);
+        var data = existing.Value.Data;
+
+        var form = new BudgetFormModel
+        {
+            Name = data.Name,
+            Amount = data.Amount,
+            TimeGrain = data.TimeGrain?.ToString() ?? "Monthly",
+            StartDate = data.TimePeriod?.StartOn.DateTime,
+            EndDate = data.TimePeriod?.EndOn?.DateTime,
+            AlertEmails = new List<string>(),
+            AlertThresholds = new List<BudgetAlertThreshold>()
+        };
+
+        if (data.Notifications is { Count: > 0 })
+        {
+            var emailsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var (_, notification) in data.Notifications)
+            {
+                foreach (var email in notification.ContactEmails)
+                {
+                    emailsSet.Add(email);
+                }
+
+                var thresholdType = notification.ThresholdType == NotificationThresholdType.Forecasted
+                    ? "Forecasted"
+                    : "Actual";
+
+                form.AlertThresholds.Add(new BudgetAlertThreshold
+                {
+                    Percentage = notification.Threshold,
+                    ThresholdType = thresholdType
+                });
+            }
+
+            form.AlertEmails = emailsSet.ToList();
+        }
+
+        return form;
+    }
+
+    public async Task UpdateBudgetAsync(BudgetInfo budget, BudgetFormModel form)
+    {
+        var budgetData = new ConsumptionBudgetData
+        {
+            Amount = form.Amount!.Value,
+            Category = BudgetCategory.Cost,
+            TimeGrain = ParseTimeGrain(form.TimeGrain),
+            TimePeriod = new BudgetTimePeriod(
+                new DateTimeOffset(form.StartDate!.Value, TimeSpan.Zero))
+            {
+                EndOn = form.EndDate.HasValue
+                    ? new DateTimeOffset(form.EndDate.Value, TimeSpan.Zero)
+                    : null
+            }
+        };
+
+        ApplyNotifications(budgetData, form);
+
+        var client = tenantClientManager.GetClientForTenant(budget.TenantId);
+        var resourceId = budget.ResourceGroupName is not null
+            ? ResourceGroupResource.CreateResourceIdentifier(budget.SubscriptionId, budget.ResourceGroupName)
+            : SubscriptionResource.CreateResourceIdentifier(budget.SubscriptionId);
+        var budgets = client.GetConsumptionBudgets(resourceId);
+        await budgets.CreateOrUpdateAsync(WaitUntil.Completed, budget.Name, budgetData);
+    }
+
     private static void ApplyNotifications(ConsumptionBudgetData budgetData, BudgetFormModel form)
     {
         var emails = form.AlertEmails

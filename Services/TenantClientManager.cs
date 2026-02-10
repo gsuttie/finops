@@ -19,6 +19,30 @@ public class TenantClientManager
             new ArmClient(new AzureCliCredential(new AzureCliCredentialOptions { TenantId = tid })));
     }
 
+    public async Task<bool> ValidateTenantAsync(string tenantId)
+    {
+        try
+        {
+            var client = ConnectTenant(tenantId);
+            await foreach (var _ in client.GetSubscriptions().GetAllAsync())
+            {
+                return true;
+            }
+            // No subscriptions found but no error — credential is valid
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public void ReconnectTenant(string tenantId)
+    {
+        _tenantClients.TryRemove(tenantId, out _);
+        ConnectTenant(tenantId);
+    }
+
     public bool DisconnectTenant(string tenantId)
     {
         return _tenantClients.TryRemove(tenantId, out _);

@@ -1,46 +1,67 @@
 @using System.Text.RegularExpressions
+@using FinOps.Services
+@inject ITenantConnectionService ConnectionService
 
 <MudDialog>
     <DialogContent>
-        <MudText Class="mb-4">Enter the Azure AD tenant ID (GUID) you want to connect to.</MudText>
-        <MudTextField T="string" @bind-Value="_tenantId" Label="Tenant ID" Placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                      Error="@(!string.IsNullOrEmpty(_validationError))" ErrorText="@_validationError"
-                      Immediate="true" OnKeyUp="OnKeyUp" />
+        @if (!_connecting)
+        {
+            <MudText Class="mb-4">Enter the Azure AD tenant ID (GUID) you want to connect to.</MudText>
+            <MudTextField T="string" @bind-Value="_tenantId" Label="Tenant ID" Placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                          Error="@(!string.IsNullOrEmpty(_validationError))" ErrorText="@_validationError"
+                          Immediate="true" OnKeyUp="OnKeyUp" />
+        }
+        else
+        {
+            <MudStack AlignItems="AlignItems.Center" Spacing="3" Class="py-4">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                <MudText Typo="Typo.body1">@_statusText</MudText>
+                @if (_showBrowserHint)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                        A browser window should have opened for Azure login. Complete the login there to continue.
+                    </MudAlert>
+                }
+            </MudStack>
+        }
+
+        @if (_connectionError is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-3" ShowCloseIcon="true" CloseIconClicked="@(() => _connectionError = null)">
+                @_connectionError
+            </MudAlert>
+        }
     </DialogContent>
     <DialogActions>
-        <MudButton OnClick="Cancel">Cancel</MudButton>
-        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Connect</MudButton>
+        @if (!_connecting)
+        {
+            <MudButton OnClick="Cancel">Cancel</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Connect</MudButton>
+        }
     </DialogActions>
 </MudDialog>
 
 @code {
-    /// <summary>
-    /// The MudDialog instance provided by the MudBlazor dialog system.
-    /// </summary>
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
     private string _tenantId = string.Empty;
     private string? _validationError;
+    private string? _connectionError;
+    private bool _connecting;
+    private string _statusText = string.Empty;
+    private bool _showBrowserHint;
 
-    /// <summary>
-    /// Compiled regex for validating GUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).
-    /// </summary>
     private static readonly Regex GuidRegex = new(
         @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
         RegexOptions.Compiled);
 
-    /// <summary>
-    /// Cancels the dialog without returning a result.
-    /// </summary>
     private void Cancel() => MudDialog.Cancel();
 
-    /// <summary>
-    /// Validates the tenant ID as a well-formed GUID and closes the dialog with the lowercase tenant ID on success.
-    /// </summary>
-    private void Submit()
+    private async Task Submit()
     {
         _validationError = null;
+        _connectionError = null;
 
         if (string.IsNullOrWhiteSpace(_tenantId))
         {
@@ -48,21 +69,46 @@
             return;
         }
 
-        if (!GuidRegex.IsMatch(_tenantId.Trim()))
+        var trimmed = _tenantId.Trim().ToLowerInvariant();
+
+        if (!GuidRegex.IsMatch(trimmed))
         {
             _validationError = "Please enter a valid GUID.";
             return;
         }
 
-        MudDialog.Close(DialogResult.Ok(_tenantId.Trim().ToLowerInvariant()));
+        _connecting = true;
+        _showBrowserHint = false;
+        StateHasChanged();
+
+        var result = await ConnectionService.ConnectWithFallbackAsync(trimmed, status =>
+        {
+            InvokeAsync(() =>
+            {
+                _statusText = status;
+                _showBrowserHint = status.Contains("browser", StringComparison.OrdinalIgnoreCase);
+                StateHasChanged();
+            });
+        });
+
+        _connecting = false;
+
+        switch (result.Status)
+        {
+            case TenantConnectionStatus.Connected:
+            case TenantConnectionStatus.ConnectedAfterLogin:
+                MudDialog.Close(DialogResult.Ok(trimmed));
+                break;
+            case TenantConnectionStatus.Failed:
+                _connectionError = result.ErrorMessage ?? "Connection failed.";
+                StateHasChanged();
+                break;
+        }
     }
 
-    /// <summary>
-    /// Submits the form when the user presses Enter in the text field.
-    /// </summary>
-    private void OnKeyUp(KeyboardEventArgs e)
+    private async Task OnKeyUp(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
-            Submit();
+        if (e.Key == "Enter" && !_connecting)
+            await Submit();
     }
 }

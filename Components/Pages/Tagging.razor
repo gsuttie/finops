@@ -36,10 +36,10 @@
 
 @* Step 1: Select a subscription *@
 <MudTable T="TenantSubscription" Items="@_filteredSubscriptions" Loading="@_loadingSubscriptions"
-          Hover="true" Dense="true" Elevation="2"
-          SelectedItem="@_selectedSubscription" SelectedItemChanged="OnSubscriptionSelected">
+          Hover="true" Dense="true" Elevation="2" MultiSelection="true"
+          SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSubscriptionsChanged">
     <ToolBarContent>
-        <MudText Typo="Typo.h6">1. Select a Subscription</MudText>
+        <MudText Typo="Typo.h6">1. Select Subscriptions</MudText>
         <MudSpacer />
         <MudTextField T="string" @bind-Value="_searchText" Placeholder="Search subscriptions..."
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
@@ -83,7 +83,7 @@
 </MudTable>
 
 @* Step 2: Select resource groups *@
-@if (_selectedSubscription is not null)
+@if (_selectedSubscriptions.Count > 0)
 {
     <MudTable T="ResourceGroupInfo" Items="@_resourceGroups" MultiSelection="true"
               @bind-SelectedItems="_selectedResourceGroups" Loading="@_loadingResourceGroups"
@@ -99,12 +99,14 @@
         </ToolBarContent>
         <HeaderContent>
             <MudTh><MudTableSortLabel T="ResourceGroupInfo" SortBy="@(new Func<ResourceGroupInfo, object>(x => x.Name))">Name</MudTableSortLabel></MudTh>
+            <MudTh>Subscription</MudTh>
             <MudTh><MudTableSortLabel T="ResourceGroupInfo" SortBy="@(new Func<ResourceGroupInfo, object>(x => x.Location ?? ""))">Location</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel T="ResourceGroupInfo" SortBy="@(new Func<ResourceGroupInfo, object>(x => x.ProvisioningState ?? ""))">State</MudTableSortLabel></MudTh>
             <MudTh>Existing Tags</MudTh>
         </HeaderContent>
         <RowTemplate>
             <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="Subscription">@(_rgSubscriptionMap.TryGetValue(context, out var sub) ? sub.DisplayName : "")</MudTd>
             <MudTd DataLabel="Location">@context.Location</MudTd>
             <MudTd DataLabel="State">@context.ProvisioningState</MudTd>
             <MudTd DataLabel="Existing Tags">
@@ -186,9 +188,10 @@
 
 @code {
     private List<TenantSubscription> _subscriptions = [];
-    private TenantSubscription? _selectedSubscription;
+    private HashSet<TenantSubscription> _selectedSubscriptions = new();
     private List<ResourceGroupInfo> _resourceGroups = [];
     private HashSet<ResourceGroupInfo> _selectedResourceGroups = [];
+    private Dictionary<ResourceGroupInfo, TenantSubscription> _rgSubscriptionMap = new();
     private List<TagOperationResult> _results = [];
     private bool _loadingSubscriptions = true;
     private bool _loadingResourceGroups;
@@ -223,9 +226,10 @@
     {
         _loadingSubscriptions = true;
         _loadError = null;
-        _selectedSubscription = null;
+        _selectedSubscriptions.Clear();
         _resourceGroups.Clear();
         _selectedResourceGroups.Clear();
+        _rgSubscriptionMap.Clear();
         StateHasChanged();
 
         try
@@ -243,16 +247,17 @@
     }
 
     /// <summary>
-    /// Handles subscription row selection; loads resource groups for the selected subscription.
+    /// Handles subscription selection changes; loads resource groups for all selected subscriptions.
     /// </summary>
-    /// <param name="subscription">The subscription the user clicked on.</param>
-    private async Task OnSubscriptionSelected(TenantSubscription subscription)
+    private async Task OnSubscriptionsChanged(HashSet<TenantSubscription> selected)
     {
-        _selectedSubscription = subscription;
+        _selectedSubscriptions = selected;
         _selectedResourceGroups.Clear();
         _results.Clear();
+        _resourceGroups.Clear();
+        _rgSubscriptionMap.Clear();
 
-        if (subscription is null) return;
+        if (selected.Count == 0) return;
 
         _loadingResourceGroups = true;
         _rgLoadError = null;
@@ -260,12 +265,21 @@
 
         try
         {
-            _resourceGroups = (await TaggingService.GetResourceGroupsAsync(subscription)).ToList();
+            foreach (var subscription in selected)
+            {
+                var rgs = (await TaggingService.GetResourceGroupsAsync(subscription)).ToList();
+                foreach (var rg in rgs)
+                {
+                    _rgSubscriptionMap[rg] = subscription;
+                }
+                _resourceGroups.AddRange(rgs);
+            }
         }
         catch (Exception ex)
         {
             _rgLoadError = $"Failed to load resource groups: {ex.Message}";
             _resourceGroups.Clear();
+            _rgSubscriptionMap.Clear();
         }
         finally
         {
@@ -284,7 +298,6 @@
 
         if (result is { Canceled: false, Data: string tenantId })
         {
-            TenantClientManager.ConnectTenant(tenantId);
             Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
             await LoadSubscriptions();
         }
@@ -308,7 +321,7 @@
     private async Task OpenApplyTagsDialog()
     {
         if (_applying) return;
-        if (_selectedSubscription is null || _selectedResourceGroups.Count == 0)
+        if (_selectedSubscriptions.Count == 0 || _selectedResourceGroups.Count == 0)
         {
             Snackbar.Add("Select at least one resource group first.", Severity.Warning);
             return;
@@ -326,18 +339,29 @@
 
             try
             {
-                var allResults = await TaggingService.ApplyTagsAsync(
-                    _selectedSubscription,
-                    _selectedResourceGroups,
-                    tags,
-                    onProgress: r =>
-                    {
-                        InvokeAsync(() =>
+                var allResults = new List<TagOperationResult>();
+
+                // Group selected resource groups by their subscription
+                var rgsBySubscription = _selectedResourceGroups
+                    .Where(rg => _rgSubscriptionMap.ContainsKey(rg))
+                    .GroupBy(rg => _rgSubscriptionMap[rg]);
+
+                foreach (var group in rgsBySubscription)
+                {
+                    var results = await TaggingService.ApplyTagsAsync(
+                        group.Key,
+                        group.ToHashSet(),
+                        tags,
+                        onProgress: r =>
                         {
-                            _results.Add(r);
-                            StateHasChanged();
+                            InvokeAsync(() =>
+                            {
+                                _results.Add(r);
+                                StateHasChanged();
+                            });
                         });
-                    });
+                    allResults.AddRange(results);
+                }
 
                 var succeeded = allResults.Count(r => r.Success);
                 var failed = allResults.Count(r => !r.Success);
@@ -354,26 +378,35 @@
             finally
             {
                 _applying = false;
-                // Reload resource groups so "Existing Tags" column reflects current state
                 await ReloadResourceGroups();
             }
         }
     }
 
     /// <summary>
-    /// Reloads the resource groups for the currently selected subscription to refresh tag data.
+    /// Reloads the resource groups for all selected subscriptions to refresh tag data.
     /// </summary>
     private async Task ReloadResourceGroups()
     {
-        if (_selectedSubscription is null) return;
+        if (_selectedSubscriptions.Count == 0) return;
 
         _loadingResourceGroups = true;
         _selectedResourceGroups.Clear();
+        _resourceGroups.Clear();
+        _rgSubscriptionMap.Clear();
         StateHasChanged();
 
         try
         {
-            _resourceGroups = (await TaggingService.GetResourceGroupsAsync(_selectedSubscription)).ToList();
+            foreach (var subscription in _selectedSubscriptions)
+            {
+                var rgs = (await TaggingService.GetResourceGroupsAsync(subscription)).ToList();
+                foreach (var rg in rgs)
+                {
+                    _rgSubscriptionMap[rg] = subscription;
+                }
+                _resourceGroups.AddRange(rgs);
+            }
         }
         catch (Exception ex)
         {

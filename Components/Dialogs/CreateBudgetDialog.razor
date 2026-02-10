@@ -3,8 +3,8 @@
 <MudDialog>
     <TitleContent>
         <MudText Typo="Typo.h6">
-            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-2" />
-            Create Budget
+            <MudIcon Icon="@(IsEditMode ? Icons.Material.Filled.Edit : Icons.Material.Filled.AccountBalance)" Class="mr-2" />
+            @(IsEditMode ? "Edit Budget" : "Create Budget")
         </MudText>
     </TitleContent>
     <DialogContent>
@@ -14,6 +14,7 @@
                           Required="true"
                           RequiredError="Budget name is required"
                           MaxLength="63"
+                          ReadOnly="@IsEditMode"
                           Immediate="true" />
 
             <MudNumericField T="decimal?" @bind-Value="Model.Amount"
@@ -127,7 +128,7 @@
         <MudButton OnClick="Cancel">Cancel</MudButton>
         <MudButton Color="Color.Primary" Variant="Variant.Filled"
                    Disabled="@(!_isValid)" OnClick="Submit">
-            Create
+            @(IsEditMode ? "Update" : "Create")
         </MudButton>
     </DialogActions>
 </MudDialog>
@@ -136,11 +137,25 @@
     [CascadingParameter]
     private IMudDialogInstance MudDialog { get; set; } = null!;
 
+    [Parameter]
+    public bool IsEditMode { get; set; }
+
+    [Parameter]
+    public BudgetFormModel? ExistingModel { get; set; }
+
     private MudForm _form = null!;
     private bool _isValid;
     private string? _validationError;
 
     public BudgetFormModel Model { get; set; } = new();
+
+    protected override void OnInitialized()
+    {
+        if (IsEditMode && ExistingModel is not null)
+        {
+            Model = ExistingModel;
+        }
+    }
 
     private void Cancel() => MudDialog.Cancel();
 

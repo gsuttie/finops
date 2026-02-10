@@ -159,6 +159,8 @@
             <MudTd DataLabel="Start Date">@(context.StartDate?.ToString("dd MMM yyyy") ?? "-")</MudTd>
             <MudTd DataLabel="End Date">@(context.EndDate?.ToString("dd MMM yyyy") ?? "-")</MudTd>
             <MudTd DataLabel="Actions">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary"
+                               Size="Size.Small" OnClick="@(() => EditBudget(context))" />
                 <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
                                Size="Size.Small" OnClick="@(() => DeleteBudget(context))" />
             </MudTd>
@@ -237,7 +239,6 @@
 
         if (result is { Canceled: false, Data: string tenantId })
         {
-            TenantClientManager.ConnectTenant(tenantId);
             Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
             await LoadSubscriptions();
         }
@@ -340,6 +341,43 @@
             {
                 _creating = false;
                 await LoadExistingBudgets();
+            }
+        }
+    }
+
+    private async Task EditBudget(BudgetInfo budget)
+    {
+        BudgetFormModel form;
+        try
+        {
+            form = await BudgetService.GetBudgetFormDataAsync(budget);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load budget data: {ex.Message}", Severity.Error);
+            return;
+        }
+
+        var parameters = new DialogParameters<FinOps.Components.Dialogs.CreateBudgetDialog>
+        {
+            { x => x.IsEditMode, true },
+            { x => x.ExistingModel, form }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.CreateBudgetDialog>("Edit Budget", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: BudgetFormModel updatedForm })
+        {
+            try
+            {
+                await BudgetService.UpdateBudgetAsync(budget, updatedForm);
+                Snackbar.Add($"Budget '{budget.Name}' updated", Severity.Success);
+                await LoadExistingBudgets();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to update budget: {ex.Message}", Severity.Error);
             }
         }
     }

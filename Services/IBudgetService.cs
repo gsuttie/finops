@@ -19,4 +19,8 @@ public interface IBudgetService
         BudgetFormModel form);
 
     Task DeleteBudgetAsync(BudgetInfo budget);
+
+    Task<BudgetFormModel> GetBudgetFormDataAsync(BudgetInfo budget);
+
+    Task UpdateBudgetAsync(BudgetInfo budget, BudgetFormModel form);
 }
