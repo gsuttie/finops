@@ -1,0 +1,337 @@
+@page "/advisor"
+@using FinOps.Models
+@using FinOps.Services
+@inject IAzureSubscriptionService SubscriptionService
+@inject IAdvisorService AdvisorService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Advisor Recommendations</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Advisor Recommendations</MudText>
+
+@* Tenant connection bar *@
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+            Home / Lighthouse
+        </MudChip>
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadSubscriptions">
+            Refresh
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+@* Subscription selection table *@
+<MudTable T="TenantSubscription" Items="@_filteredSubscriptions" MultiSelection="true"
+          SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSelectedSubscriptionsChanged"
+          Loading="@_loadingSubscriptions" Hover="true" Dense="true" Elevation="2">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Subscriptions</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_subSearchText" Placeholder="Search subscriptions..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Lightbulb"
+                   OnClick="@GetRecommendations">
+            Get Recommendations (@_selectedSubscriptions.Count selected)
+        </MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant Id</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.TenantId</MudText>
+        </MudTd>
+        <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        @if (_loadError is not null)
+        {
+            <MudText Color="Color.Error">@_loadError</MudText>
+        }
+        else
+        {
+            <MudText>No subscriptions found.</MudText>
+        }
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@* Summary chips *@
+@if (_recommendations.Count > 0)
+{
+    <MudPaper Class="pa-3 mt-4 mb-2" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+            <MudText Typo="Typo.body1" Class="mr-2"><b>@_recommendations.Count</b> recommendations found</MudText>
+            @foreach (var group in _categoryCounts)
+            {
+                <MudChip T="string" Color="@GetCategoryColor(group.Key)" Size="Size.Small"
+                         Variant="@(_activeCategory == group.Key ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => ToggleCategoryFilter(group.Key))">
+                    @group.Key (@group.Value)
+                </MudChip>
+            }
+            @if (_activeCategory is not null)
+            {
+                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Default"
+                           OnClick="@(() => _activeCategory = null)">
+                    Clear Filter
+                </MudButton>
+            }
+        </MudStack>
+    </MudPaper>
+}
+
+@* Results table *@
+@if (_fetchComplete)
+{
+    <MudTable T="AdvisorRecommendation" Items="@_filteredResults" Hover="true" Dense="true" Elevation="2" Class="mt-4">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Recommendations</MudText>
+            <MudSpacer />
+            <MudTextField T="string" @bind-Value="_resultSearchText" Placeholder="Search recommendations..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium" Immediate="true" Style="max-width: 300px;" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.Category))">Category</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.Impact))">Impact</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.Problem))">Problem</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.Solution))">Solution</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.ImpactedValue))">Impacted Resource</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.SubscriptionName))">Subscription</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.LastUpdated ?? DateTimeOffset.MinValue))">Last Updated</MudTableSortLabel></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Category">
+                <MudChip T="string" Color="@GetCategoryColor(context.Category)" Size="Size.Small">
+                    @context.Category
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Impact">
+                <MudChip T="string" Color="@GetImpactColor(context.Impact)" Size="Size.Small">
+                    @context.Impact
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Problem">@context.Problem</MudTd>
+            <MudTd DataLabel="Solution">@context.Solution</MudTd>
+            <MudTd DataLabel="Impacted Resource">
+                <MudText Typo="Typo.body2">@context.ImpactedValue</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.ImpactedField</MudText>
+            </MudTd>
+            <MudTd DataLabel="Subscription">@context.SubscriptionName</MudTd>
+            <MudTd DataLabel="Last Updated">@(context.LastUpdated?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No recommendations found — looking good!</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@if (_fetching)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+    <MudText Typo="Typo.body2" Class="mt-2" Align="Align.Center">Fetching advisor recommendations...</MudText>
+}
+
+@code {
+    private List<TenantSubscription> _subscriptions = [];
+    private HashSet<TenantSubscription> _selectedSubscriptions = [];
+    private List<AdvisorRecommendation> _recommendations = [];
+    private bool _loadingSubscriptions = true;
+    private bool _fetching;
+    private bool _fetchComplete;
+    private string? _loadError;
+    private string _subSearchText = string.Empty;
+    private string _resultSearchText = string.Empty;
+    private string? _activeCategory;
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_subSearchText)
+            ? _subscriptions
+            : _subscriptions.Where(s =>
+                s.DisplayName.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.TenantId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase));
+
+    private Dictionary<string, int> _categoryCounts =>
+        _recommendations
+            .GroupBy(r => r.Category)
+            .OrderByDescending(g => g.Count())
+            .ToDictionary(g => g.Key, g => g.Count());
+
+    private IEnumerable<AdvisorRecommendation> _filteredResults
+    {
+        get
+        {
+            var results = _activeCategory is not null
+                ? _recommendations.Where(r => r.Category == _activeCategory)
+                : _recommendations.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(_resultSearchText))
+            {
+                results = results.Where(r =>
+                    r.Problem.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    r.Solution.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    r.ImpactedValue.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    r.ImpactedField.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    r.SubscriptionName.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    r.Category.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    r.Impact.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return results;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loadingSubscriptions = true;
+        _loadError = null;
+        _selectedSubscriptions.Clear();
+        StateHasChanged();
+
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load subscriptions: {ex.Message}";
+        }
+        finally
+        {
+            _loadingSubscriptions = false;
+        }
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect Tenant", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+
+    private void OnSelectedSubscriptionsChanged(HashSet<TenantSubscription> selected)
+    {
+        _selectedSubscriptions = selected;
+    }
+
+    private async Task GetRecommendations()
+    {
+        if (_selectedSubscriptions.Count == 0)
+        {
+            Snackbar.Add("Please select at least one subscription.", Severity.Warning);
+            return;
+        }
+
+        _fetching = true;
+        _fetchComplete = false;
+        _recommendations.Clear();
+        _activeCategory = null;
+        StateHasChanged();
+
+        try
+        {
+            var results = await AdvisorService.GetRecommendationsAsync(_selectedSubscriptions);
+            _recommendations = results.ToList();
+            _fetchComplete = true;
+
+            if (_recommendations.Count == 0)
+            {
+                Snackbar.Add("No recommendations found!", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Found {_recommendations.Count} recommendation(s)", Severity.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to fetch recommendations: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _fetching = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleCategoryFilter(string category)
+    {
+        _activeCategory = _activeCategory == category ? null : category;
+    }
+
+    private static Color GetStateColor(string? state) => state switch
+    {
+        "Enabled" => Color.Success,
+        "Disabled" => Color.Error,
+        "Warned" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static Color GetCategoryColor(string category) => category switch
+    {
+        "Cost" => Color.Success,
+        "Security" => Color.Error,
+        "HighAvailability" => Color.Warning,
+        "OperationalExcellence" => Color.Info,
+        "Performance" => Color.Primary,
+        _ => Color.Default
+    };
+
+    private static Color GetImpactColor(string impact) => impact switch
+    {
+        "High" => Color.Error,
+        "Medium" => Color.Warning,
+        "Low" => Color.Info,
+        _ => Color.Default
+    };
+}

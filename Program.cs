@@ -15,6 +15,9 @@ builder.Services.AddScoped<IBudgetService, BudgetService>();
 builder.Services.AddScoped<IResourceTaggingService, ResourceTaggingService>();
 builder.Services.AddScoped<IPolicyService, PolicyService>();
 builder.Services.AddScoped<ITenantConnectionService, TenantConnectionService>();
+builder.Services.AddScoped<IOrphanedResourceService, OrphanedResourceService>();
+builder.Services.AddScoped<IAdvisorService, AdvisorService>();
+builder.Services.AddScoped<ILogAnalyticsService, LogAnalyticsService>();
 
 var app = builder.Build();
 

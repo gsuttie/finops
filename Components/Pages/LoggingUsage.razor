@@ -1,0 +1,358 @@
+@page "/logging-usage"
+@using FinOps.Models
+@using FinOps.Services
+@inject IAzureSubscriptionService SubscriptionService
+@inject ILogAnalyticsService LogAnalyticsService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Logging Usage</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Log Analytics Workspace Usage</MudText>
+
+@* Tenant connection bar *@
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+            Home / Lighthouse
+        </MudChip>
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadSubscriptions">
+            Refresh
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+@* Subscription selection table *@
+<MudTable T="TenantSubscription" Items="@_filteredSubscriptions" MultiSelection="true"
+          SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSelectedSubscriptionsChanged"
+          Loading="@_loadingSubscriptions" Hover="true" Dense="true" Elevation="2">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Subscriptions</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_subSearchText" Placeholder="Search subscriptions..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Storage"
+                   OnClick="@GetWorkspaces">
+            Get Workspaces (@_selectedSubscriptions.Count selected)
+        </MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant Id</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.TenantId</MudText>
+        </MudTd>
+        <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        @if (_loadError is not null)
+        {
+            <MudText Color="Color.Error">@_loadError</MudText>
+        }
+        else
+        {
+            <MudText>No subscriptions found.</MudText>
+        }
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@* Workspace loading indicator *@
+@if (_fetchingWorkspaces)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+    <MudText Typo="Typo.body2" Class="mt-2" Align="Align.Center">Fetching workspaces...</MudText>
+}
+
+@* Workspaces table *@
+@if (_workspacesFetched)
+{
+    <MudTable T="WorkspaceInfo" Items="@_workspaces" MultiSelection="true"
+              SelectedItems="_selectedWorkspaces" SelectedItemsChanged="OnSelectedWorkspacesChanged"
+              Hover="true" Dense="true" Elevation="2" Class="mt-4">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Workspaces (@_workspaces.Count)</MudText>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh><MudTableSortLabel T="WorkspaceInfo" SortBy="@(new Func<WorkspaceInfo, object>(x => x.Name))">Name</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="WorkspaceInfo" SortBy="@(new Func<WorkspaceInfo, object>(x => x.ResourceGroup))">Resource Group</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="WorkspaceInfo" SortBy="@(new Func<WorkspaceInfo, object>(x => x.Location))">Location</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="WorkspaceInfo" SortBy="@(new Func<WorkspaceInfo, object>(x => x.SkuName))">SKU</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="WorkspaceInfo" SortBy="@(new Func<WorkspaceInfo, object>(x => x.RetentionInDays))">Retention</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="WorkspaceInfo" SortBy="@(new Func<WorkspaceInfo, object>(x => x.DailyQuotaGb ?? double.MaxValue))">Daily Cap</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="WorkspaceInfo" SortBy="@(new Func<WorkspaceInfo, object>(x => x.SubscriptionName))">Subscription</MudTableSortLabel></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="Resource Group">@context.ResourceGroup</MudTd>
+            <MudTd DataLabel="Location">@context.Location</MudTd>
+            <MudTd DataLabel="SKU">
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">@context.SkuName</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Retention">@context.RetentionInDays days</MudTd>
+            <MudTd DataLabel="Daily Cap">@(context.DailyQuotaGb.HasValue ? $"{context.DailyQuotaGb:F2} GB" : "No cap")</MudTd>
+            <MudTd DataLabel="Subscription">@context.SubscriptionName</MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No workspaces found in the selected subscriptions.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@* Usage loading indicator *@
+@if (_fetchingUsage)
+{
+    <MudProgressLinear Color="Color.Secondary" Indeterminate="true" Class="mt-4" />
+    <MudText Typo="Typo.body2" Class="mt-2" Align="Align.Center">Querying workspace usage data...</MudText>
+}
+
+@* Usage detail panel *@
+@if (_usageData is not null)
+{
+    <MudPaper Class="pa-4 mt-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-3">Usage: @_usageData.WorkspaceName (Last 30 Days)</MudText>
+
+        @* Summary chips *@
+        <MudStack Row="true" Spacing="2" Class="mb-4">
+            <MudChip T="string" Color="Color.Primary" Size="Size.Medium" Variant="Variant.Filled">
+                Total: @_usageData.TotalDataGb.ToString("F2") GB
+            </MudChip>
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Medium" Variant="Variant.Filled">
+                Est. Cost: $@_usageData.EstimatedCost.ToString("F2")
+            </MudChip>
+        </MudStack>
+
+        @* Bar chart — daily billable ingestion *@
+        @if (_usageData.DailyIngestion.Count > 0)
+        {
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Daily Billable Ingestion (GB)</MudText>
+            <MudChart ChartType="ChartType.Bar" ChartSeries="@_chartSeries" XAxisLabels="@_chartLabels"
+                      Width="100%" Height="300px" ChartOptions="@_chartOptions" />
+        }
+
+        @* Data type breakdown table *@
+        <MudTable T="DataTypeUsage" Items="@_usageData.UsageByType" Hover="true" Dense="true"
+                  Elevation="0" Class="mt-4">
+            <ToolBarContent>
+                <MudText Typo="Typo.subtitle1">Usage by Data Type</MudText>
+            </ToolBarContent>
+            <HeaderContent>
+                <MudTh><MudTableSortLabel T="DataTypeUsage" SortBy="@(new Func<DataTypeUsage, object>(x => x.DataType))">Data Type</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="DataTypeUsage" SortBy="@(new Func<DataTypeUsage, object>(x => x.DataGb))">Data (GB)</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="DataTypeUsage" SortBy="@(new Func<DataTypeUsage, object>(x => x.EstimatedCost))">Est. Cost</MudTableSortLabel></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Data Type">@context.DataType</MudTd>
+                <MudTd DataLabel="Data (GB)">@context.DataGb.ToString("F4")</MudTd>
+                <MudTd DataLabel="Est. Cost">$@context.EstimatedCost.ToString("F2")</MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+}
+
+@code {
+    private List<TenantSubscription> _subscriptions = [];
+    private HashSet<TenantSubscription> _selectedSubscriptions = [];
+    private List<WorkspaceInfo> _workspaces = [];
+    private HashSet<WorkspaceInfo> _selectedWorkspaces = [];
+    private HashSet<WorkspaceInfo> _previousSelectedWorkspaces = [];
+    private WorkspaceUsageData? _usageData;
+
+    private bool _loadingSubscriptions = true;
+    private bool _fetchingWorkspaces;
+    private bool _workspacesFetched;
+    private bool _fetchingUsage;
+    private string? _loadError;
+    private string _subSearchText = string.Empty;
+
+    // Chart data
+    private List<ChartSeries> _chartSeries = [];
+    private string[] _chartLabels = [];
+    private readonly ChartOptions _chartOptions = new() { YAxisTicks = 1 };
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_subSearchText)
+            ? _subscriptions
+            : _subscriptions.Where(s =>
+                s.DisplayName.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.TenantId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loadingSubscriptions = true;
+        _loadError = null;
+        _selectedSubscriptions.Clear();
+        StateHasChanged();
+
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load subscriptions: {ex.Message}";
+        }
+        finally
+        {
+            _loadingSubscriptions = false;
+        }
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect Tenant", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+
+    private void OnSelectedSubscriptionsChanged(HashSet<TenantSubscription> selected)
+    {
+        _selectedSubscriptions = selected;
+    }
+
+    private async Task GetWorkspaces()
+    {
+        if (_selectedSubscriptions.Count == 0)
+        {
+            Snackbar.Add("Please select at least one subscription.", Severity.Warning);
+            return;
+        }
+
+        _fetchingWorkspaces = true;
+        _workspacesFetched = false;
+        _workspaces.Clear();
+        _selectedWorkspaces.Clear();
+        _usageData = null;
+        StateHasChanged();
+
+        try
+        {
+            var results = await LogAnalyticsService.GetWorkspacesAsync(_selectedSubscriptions);
+            _workspaces = results.ToList();
+            _workspacesFetched = true;
+
+            if (_workspaces.Count == 0)
+                Snackbar.Add("No workspaces found in the selected subscriptions.", Severity.Info);
+            else
+                Snackbar.Add($"Found {_workspaces.Count} workspace(s)", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to fetch workspaces: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _fetchingWorkspaces = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnSelectedWorkspacesChanged(HashSet<WorkspaceInfo> selected)
+    {
+        _selectedWorkspaces = selected;
+
+        // Clear previous usage data
+        _usageData = null;
+        _chartSeries = [];
+        _chartLabels = [];
+
+        // Find the newly added workspace (the one in selected but not in previous)
+        var newWorkspace = selected.Except(_previousSelectedWorkspaces).FirstOrDefault();
+        _previousSelectedWorkspaces = [..selected];
+
+        if (newWorkspace is null) return;
+
+        _fetchingUsage = true;
+        StateHasChanged();
+
+        try
+        {
+            _usageData = await LogAnalyticsService.GetWorkspaceUsageAsync(newWorkspace);
+            BuildChartData();
+            Snackbar.Add($"Loaded usage data for {newWorkspace.Name}", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to query usage: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _fetchingUsage = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BuildChartData()
+    {
+        if (_usageData is null) return;
+
+        _chartLabels = _usageData.DailyIngestion
+            .Select(d => d.Date.ToString("MM/dd"))
+            .ToArray();
+
+        _chartSeries =
+        [
+            new ChartSeries
+            {
+                Name = "Billable GB",
+                Data = _usageData.DailyIngestion.Select(d => d.DataGb).ToArray()
+            }
+        ];
+    }
+
+    private static Color GetStateColor(string? state) => state switch
+    {
+        "Enabled" => Color.Success,
+        "Disabled" => Color.Error,
+        "Warned" => Color.Warning,
+        _ => Color.Default
+    };
+}
