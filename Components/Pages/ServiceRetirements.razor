@@ -1,0 +1,418 @@
+@page "/service-retirements"
+@using FinOps.Models
+@using FinOps.Services
+@inject IAzureSubscriptionService SubscriptionService
+@inject IServiceRetirementService ServiceRetirementService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Service Retirements</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Service Retirements</MudText>
+
+@* Tenant connection bar *@
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadSubscriptions">
+            Refresh
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+@* Subscription selection table *@
+<MudTable T="TenantSubscription" Items="@_filteredSubscriptions" MultiSelection="true"
+          SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSelectedSubscriptionsChanged"
+          Loading="@_loadingSubscriptions" Hover="true" Dense="true" Elevation="2">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Subscriptions</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_subSearchText" Placeholder="Search subscriptions..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Search"
+                   OnClick="@ScanForRetirements">
+            Scan (@_selectedSubscriptions.Count selected)
+        </MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
+            <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.TenantId</MudText>
+        </MudTd>
+        <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        @if (_loadError is not null)
+        {
+            <MudText Color="Color.Error">@_loadError</MudText>
+        }
+        else
+        {
+            <MudText>No subscriptions found.</MudText>
+        }
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@* Summary chips *@
+@if (_retirements.Count > 0)
+{
+    <MudPaper Class="pa-3 mt-4 mb-2" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+            <MudText Typo="Typo.body1" Class="mr-2"><b>@_totalResourceCount</b> affected resources across <b>@_retirements.Count</b> retirements</MudText>
+            @foreach (var group in _serviceCounts)
+            {
+                <MudChip T="string" Color="@GetServiceColor(group.Key)" Size="Size.Small"
+                         Variant="@(_activeService == group.Key ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => ToggleServiceFilter(group.Key))">
+                    @group.Key (@group.Value)
+                </MudChip>
+            }
+            @if (_activeService is not null)
+            {
+                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Default"
+                           OnClick="@(() => _activeService = null)">
+                    Clear Filter
+                </MudButton>
+            }
+        </MudStack>
+    </MudPaper>
+}
+
+@* Results table *@
+@if (_scanComplete)
+{
+    <MudTable T="ServiceRetirement" Items="@_filteredResults" Hover="true" Dense="true" Elevation="2" Class="mt-4"
+              SortLabel="Sort By" MultiSelection="true" SelectedItems="_selectedRetirements" SelectedItemsChanged="OnSelectedRetirementsChanged">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Scan Results</MudText>
+            <MudSpacer />
+            <MudTextField T="string" @bind-Value="_resultSearchText" Placeholder="Search results..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium" Immediate="true" Style="max-width: 300px;" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh><MudTableSortLabel T="ServiceRetirement" SortBy="@(new Func<ServiceRetirement, object>(x => x.ServiceName))">Service Name</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="ServiceRetirement" SortBy="@(new Func<ServiceRetirement, object>(x => x.RetiringFeature))">Retiring Feature</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="ServiceRetirement" InitialDirection="SortDirection.Ascending" SortBy="@(new Func<ServiceRetirement, object>(x => x.RetirementDate))">Retirement Date</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="ServiceRetirement" SortBy="@(new Func<ServiceRetirement, object>(x => x.ResourceCount))">Resource Count</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="ServiceRetirement" SortBy="@(new Func<ServiceRetirement, object>(x => x.SubscriptionName))">Subscription</MudTableSortLabel></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Service Name">
+                <MudChip T="string" Color="@GetServiceColor(context.ServiceName)" Size="Size.Small">
+                    @context.ServiceName
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Retiring Feature">
+                <MudTooltip Text="@context.Description">
+                    <MudText Typo="Typo.body2">@context.RetiringFeature</MudText>
+                </MudTooltip>
+            </MudTd>
+            <MudTd DataLabel="Retirement Date">
+                <MudText Typo="Typo.body2" Color="@GetRetirementDateColor(context.RetirementDate)">
+                    <strong>@FormatRetirementDate(context.RetirementDate)</strong>
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Resource Count">
+                <MudChip T="string" Color="@GetResourceCountColor(context.ResourceCount)" Size="Size.Small">
+                    @context.ResourceCount
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Subscription">@context.SubscriptionName</MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText Color="Color.Success">No service retirements found — all services up to date!</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@if (_scanning)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+    <MudText Typo="Typo.body2" Class="mt-2" Align="Align.Center">Scanning for service retirements...</MudText>
+}
+
+@* Resource details table *@
+@if (_selectedRetirements.Count > 0)
+{
+    <MudPaper Class="pa-3 mt-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-3">Affected Resources (@_selectedResources.Count)</MudText>
+        <MudTable T="RetirementResource" Items="@_selectedResources" Hover="true" Dense="true" Elevation="0">
+            <HeaderContent>
+                <MudTh><MudTableSortLabel T="RetirementResource" SortBy="@(new Func<RetirementResource, object>(x => x.SubscriptionName))">Subscription</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="RetirementResource" SortBy="@(new Func<RetirementResource, object>(x => x.ResourceType))">Type</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="RetirementResource" SortBy="@(new Func<RetirementResource, object>(x => x.RetiringFeature))">Retiring Feature</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="RetirementResource" SortBy="@(new Func<RetirementResource, object>(x => x.RetirementDate))">Retirement Date</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="RetirementResource" SortBy="@(new Func<RetirementResource, object>(x => x.ResourceGroup))">Resource Group</MudTableSortLabel></MudTh>
+                <MudTh><MudTableSortLabel T="RetirementResource" SortBy="@(new Func<RetirementResource, object>(x => x.Location))">Location</MudTableSortLabel></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Subscription">
+                    <MudText Typo="Typo.body2">@context.SubscriptionName</MudText>
+                    <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+                </MudTd>
+                <MudTd DataLabel="Type">@context.ResourceType</MudTd>
+                <MudTd DataLabel="Retiring Feature">@context.RetiringFeature</MudTd>
+                <MudTd DataLabel="Retirement Date">
+                    <MudText Typo="Typo.body2" Color="@GetRetirementDateColor(context.RetirementDate)">
+                        <strong>@FormatRetirementDate(context.RetirementDate)</strong>
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Resource Group">@context.ResourceGroup</MudTd>
+                <MudTd DataLabel="Location">@context.Location</MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText>No resources to display.</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    </MudPaper>
+}
+
+@code {
+    private List<TenantSubscription> _subscriptions = [];
+    private HashSet<TenantSubscription> _selectedSubscriptions = [];
+    private List<ServiceRetirement> _retirements = [];
+    private HashSet<ServiceRetirement> _selectedRetirements = [];
+    private bool _loadingSubscriptions = true;
+    private bool _scanning;
+    private bool _scanComplete;
+    private string? _loadError;
+    private string _subSearchText = string.Empty;
+    private string _resultSearchText = string.Empty;
+    private string? _activeService;
+    private string? _homeTenantId;
+    private string? _homeTenantDisplayName;
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_subSearchText)
+            ? _subscriptions
+            : _subscriptions.Where(s =>
+                s.DisplayName.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.TenantId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase));
+
+    private Dictionary<string, int> _serviceCounts =>
+        _retirements
+            .GroupBy(r => r.ServiceName)
+            .OrderByDescending(g => g.Count())
+            .ToDictionary(g => g.Key, g => g.Count());
+
+    private int _totalResourceCount =>
+        _retirements.Sum(r => r.ResourceCount);
+
+    private List<RetirementResource> _selectedResources =>
+        _selectedRetirements.SelectMany(r => r.Resources).ToList();
+
+    private IEnumerable<ServiceRetirement> _filteredResults =>
+        GetFilteredResults();
+
+    private IEnumerable<ServiceRetirement> GetFilteredResults()
+    {
+        var results = _activeService is not null
+            ? _retirements.Where(r => r.ServiceName == _activeService)
+            : _retirements.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(_resultSearchText))
+        {
+            results = results.Where(r =>
+                r.ServiceName.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                r.RetiringFeature.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                r.RetirementDate.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                r.Description.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                r.SubscriptionName.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return results;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_homeTenantId, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loadingSubscriptions = true;
+        _loadError = null;
+        _selectedSubscriptions.Clear();
+        StateHasChanged();
+
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load subscriptions: {ex.Message}";
+        }
+        finally
+        {
+            _loadingSubscriptions = false;
+        }
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect Tenant", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+
+    private void OnSelectedSubscriptionsChanged(HashSet<TenantSubscription> selected)
+    {
+        _selectedSubscriptions = selected;
+    }
+
+    private void OnSelectedRetirementsChanged(HashSet<ServiceRetirement> selected)
+    {
+        _selectedRetirements = selected;
+    }
+
+    private async Task ScanForRetirements()
+    {
+        if (_selectedSubscriptions.Count == 0)
+        {
+            Snackbar.Add("Please select at least one subscription to scan.", Severity.Warning);
+            return;
+        }
+
+        _scanning = true;
+        _scanComplete = false;
+        _retirements.Clear();
+        _selectedRetirements.Clear();
+        _activeService = null;
+        StateHasChanged();
+
+        try
+        {
+            var results = await ServiceRetirementService.GetServiceRetirementsAsync(_selectedSubscriptions);
+            _retirements = results.ToList();
+            _scanComplete = true;
+
+            if (_retirements.Count == 0)
+            {
+                Snackbar.Add("No service retirements found — all services up to date!", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Found {_retirements.Count} retirement(s) affecting {_totalResourceCount} resource(s)", Severity.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Scan failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _scanning = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleServiceFilter(string service)
+    {
+        _activeService = _activeService == service ? null : service;
+    }
+
+    private static Color GetStateColor(string? state) => state switch
+    {
+        "Enabled" => Color.Success,
+        "Disabled" => Color.Error,
+        "Warned" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static Color GetServiceColor(string service) => service switch
+    {
+        "Compute" => Color.Primary,
+        "Storage" => Color.Secondary,
+        "Network" => Color.Info,
+        "Sql" or "Database" => Color.Tertiary,
+        "Web" => Color.Success,
+        "ContainerRegistry" or "ContainerService" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static Color GetResourceCountColor(int count)
+    {
+        if (count > 10)
+            return Color.Error;
+        if (count > 5)
+            return Color.Warning;
+        return Color.Info;
+    }
+
+    private static Color GetRetirementDateColor(string date)
+    {
+        if (DateTime.TryParse(date, out var retirementDate))
+        {
+            var daysUntilRetirement = (retirementDate - DateTime.UtcNow).Days;
+            if (daysUntilRetirement < 90)
+                return Color.Error;
+            if (daysUntilRetirement < 180)
+                return Color.Warning;
+            return Color.Default;
+        }
+        return Color.Default;
+    }
+
+    private static string FormatRetirementDate(string date)
+    {
+        if (DateTime.TryParse(date, out var retirementDate))
+        {
+            return retirementDate.ToString("MMMM yyyy");
+        }
+        return date;
+    }
+}

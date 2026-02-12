@@ -15,9 +15,12 @@
 @* Tenant connection bar *@
 <MudPaper Class="pa-3 mb-4" Elevation="1">
     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
-        <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
-            Home / Lighthouse
-        </MudChip>
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
         @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
         {
             <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
@@ -47,14 +50,15 @@
                       IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
     </ToolBarContent>
     <HeaderContent>
-        <MudTh>Tenant Id</MudTh>
+        <MudTh>Tenant</MudTh>
         <MudTh><MudTableSortLabel T="TenantSubscription" SortBy="@(new Func<TenantSubscription, object>(x => x.DisplayName))">Name</MudTableSortLabel></MudTh>
         <MudTh>Subscription ID</MudTh>
         <MudTh>State</MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Tenant">
-            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.TenantId</MudText>
+            <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
+            <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.TenantId</MudText>
         </MudTd>
         <MudTd DataLabel="Name">@context.DisplayName</MudTd>
         <MudTd DataLabel="Subscription ID">
@@ -229,6 +233,8 @@
     private string? _loadError;
     private string? _rgLoadError;
     private string _searchText = string.Empty;
+    private string? _homeTenantId;
+    private string? _homeTenantDisplayName;
 
     private IEnumerable<TenantSubscription> _filteredSubscriptions =>
         string.IsNullOrWhiteSpace(_searchText)
@@ -241,6 +247,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        (_homeTenantId, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
         await LoadSubscriptions();
     }
 

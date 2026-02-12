@@ -67,4 +67,47 @@ public class TenantClientManager
 
         return clients;
     }
+
+    /// <summary>
+    /// Gets the home tenant ID and display name from the default client.
+    /// Determines the home tenant by getting the tenant ID from the first accessible subscription,
+    /// then retrieves that tenant's display name.
+    /// Returns null for both if the tenant cannot be determined.
+    /// </summary>
+    public async Task<(string? TenantId, string? DisplayName)> GetHomeTenantInfoAsync()
+    {
+        try
+        {
+            // Get the tenant ID from the first subscription - this is the home tenant
+            string? homeTenantId = null;
+            await foreach (var subscription in _defaultClient.GetSubscriptions().GetAllAsync())
+            {
+                homeTenantId = subscription.Data.TenantId?.ToString();
+                break;
+            }
+
+            if (homeTenantId is null)
+            {
+                return (null, null);
+            }
+
+            // Now find the tenant with that ID to get its display name
+            await foreach (var tenant in _defaultClient.GetTenants().GetAllAsync())
+            {
+                if (string.Equals(tenant.Data.TenantId?.ToString(), homeTenantId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return (homeTenantId, tenant.Data.DisplayName);
+                }
+            }
+
+            // If we found a tenant ID but couldn't get the display name, return what we have
+            return (homeTenantId, null);
+        }
+        catch
+        {
+            // If we can't get tenant info, return nulls
+        }
+
+        return (null, null);
+    }
 }

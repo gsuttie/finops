@@ -8,6 +8,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.AddMudServices();
+builder.Services.AddHttpClient();
 
 builder.Services.AddScoped<TenantClientManager>();
 builder.Services.AddScoped<IAzureSubscriptionService, AzureSubscriptionService>();
@@ -18,6 +19,8 @@ builder.Services.AddScoped<ITenantConnectionService, TenantConnectionService>();
 builder.Services.AddScoped<IOrphanedResourceService, OrphanedResourceService>();
 builder.Services.AddScoped<IAdvisorService, AdvisorService>();
 builder.Services.AddScoped<ILogAnalyticsService, LogAnalyticsService>();
+builder.Services.AddScoped<ISecurityRecommendationService, SecurityRecommendationService>();
+builder.Services.AddScoped<IServiceRetirementService, ServiceRetirementService>();
 
 var app = builder.Build();
 
