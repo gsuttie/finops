@@ -64,9 +64,15 @@
             <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
             <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.TenantId</MudText>
         </MudTd>
-        <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+        <MudTd DataLabel="Name">
+            <MudLink Href="@GetAzurePortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                @context.DisplayName
+            </MudLink>
+        </MudTd>
         <MudTd DataLabel="Subscription ID">
-            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+            <MudLink Href="@GetAzurePortalUrl(context)" Target="_blank" Typo="Typo.body2" Style="font-family: monospace;">
+                @context.SubscriptionId
+            </MudLink>
         </MudTd>
         <MudTd DataLabel="State">
             <MudChip T="string" Color="@GetStateColor(context.State)" Size="Size.Small">
@@ -362,4 +368,10 @@
         "Warned" => Color.Warning,
         _ => Color.Default
     };
+
+    /// <summary>
+    /// Generates the Azure portal URL for a subscription.
+    /// </summary>
+    private static string GetAzurePortalUrl(TenantSubscription subscription) =>
+        $"https://portal.azure.com/#@{subscription.TenantId}/resource/subscriptions/{subscription.SubscriptionId}/overview";
 }
