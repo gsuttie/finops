@@ -1,0 +1,295 @@
+@page "/costs/overview"
+@using FinOps.Models
+@using FinOps.Services
+@using FinOps.Components.Dialogs
+@using System.Globalization
+@inject IAzureSubscriptionService SubscriptionService
+@inject ICostAnalysisService CostAnalysisService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Cost Overview</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Cost Overview</MudText>
+
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudTable T="SubscriptionCostInfo" Items="@_filteredSubscriptions" MultiSelection="true"
+          SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSelectedSubscriptionsChanged"
+          Loading="@_loading" Hover="true" Dense="true" Elevation="2">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Subscriptions</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_searchText" Placeholder="Search subscriptions..." Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" IconSize="MudBlazor.Size.Medium"
+                      Immediate="true" Class="mr-4" Style="max-width: 300px;" />
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>Current Month Spend</MudTh>
+        <MudTh>Forecast (Month)</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudText Typo="Typo.body2"><strong>@context.Subscription.TenantDisplayName</strong></MudText>
+            <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.Subscription.TenantId</MudText>
+        </MudTd>
+        <MudTd DataLabel="Name">@context.Subscription.DisplayName</MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.Subscription.SubscriptionId</MudText>
+        </MudTd>
+        <MudTd DataLabel="Current Month Spend">
+            @if (context.IsLoading)
+            {
+                <MudProgressCircular Size="MudBlazor.Size.Small" Indeterminate="true" />
+            }
+            else if (context.CurrentSpend.HasValue)
+            {
+                <MudText Typo="Typo.body2">@FormatCurrency(context.CurrentSpend.Value)</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">-</MudText>
+            }
+        </MudTd>
+        <MudTd DataLabel="Forecast (Month)">
+            @if (context.IsLoading)
+            {
+                <MudProgressCircular Size="MudBlazor.Size.Small" Indeterminate="true" />
+            }
+            else if (context.MonthForecast.HasValue)
+            {
+                <MudText Typo="Typo.body2">@FormatCurrency(context.MonthForecast.Value)</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">-</MudText>
+            }
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        @if (_loadError is not null)
+        {
+            <MudText Color="MudBlazor.Color.Error">@_loadError</MudText>
+        }
+        else
+        {
+            <MudText>No subscriptions found.</MudText>
+        }
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@if (_selectedSubscriptions.Count > 0)
+{
+    <MudPaper Class="pa-4 mt-4" Elevation="2">
+        <MudText Typo="Typo.h6" Class="mb-4">
+            Selected Subscriptions (@_selectedSubscriptions.Count)
+        </MudText>
+        <MudText Typo="Typo.h5">Total Last 30 Days: @FormatCurrency(_totalCost)</MudText>
+        <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">Charts will be added in a future update</MudText>
+    </MudPaper>
+}
+
+@code {
+    private List<TenantSubscription> _subscriptions = [];
+    private List<SubscriptionCostInfo> _subscriptionCostInfo = [];
+    private HashSet<SubscriptionCostInfo> _selectedSubscriptions = [];
+    private bool _loading = true;
+    private string? _loadError;
+    private string _searchText = string.Empty;
+    private string? _homeTenantId;
+    private string? _homeTenantDisplayName;
+    private decimal _totalCost = 0m;
+
+    private IEnumerable<SubscriptionCostInfo> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _subscriptionCostInfo
+            : _subscriptionCostInfo.Where(s =>
+                s.Subscription.DisplayName.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                s.Subscription.SubscriptionId.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.Subscription.TenantDisplayName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.Subscription.TenantId.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_homeTenantId, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loading = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+            _subscriptionCostInfo = _subscriptions.Select(s => new SubscriptionCostInfo
+            {
+                Subscription = s,
+                IsLoading = true
+            }).ToList();
+            StateHasChanged();
+
+            // Load costs for each subscription in parallel
+            await LoadCostsForAllSubscriptions();
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load subscriptions: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadCostsForAllSubscriptions()
+    {
+        var now = DateTime.UtcNow;
+        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+
+        var tasks = _subscriptionCostInfo.Select(async info =>
+        {
+            try
+            {
+                var currentSpendTask = CostAnalysisService.GetCostsAsync(
+                    info.Subscription.SubscriptionId,
+                    info.Subscription.TenantId,
+                    monthStart,
+                    now);
+
+                var forecastTask = CostAnalysisService.GetCostForecastAsync(
+                    info.Subscription.SubscriptionId,
+                    info.Subscription.TenantId,
+                    now,
+                    monthEnd);
+
+                await Task.WhenAll(currentSpendTask, forecastTask);
+
+                var currentSpendResult = await currentSpendTask;
+                var forecastResult = await forecastTask;
+
+                info.CurrentSpend = currentSpendResult.TotalCost;
+                info.MonthForecast = forecastResult.TotalForecast;
+                info.IsLoading = false;
+                StateHasChanged();
+            }
+            catch
+            {
+                info.IsLoading = false;
+                info.CurrentSpend = null;
+                info.MonthForecast = null;
+                StateHasChanged();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task OnSelectedSubscriptionsChanged(HashSet<SubscriptionCostInfo> selected)
+    {
+        _selectedSubscriptions = selected;
+        await CalculateTotalCost();
+    }
+
+    private async Task CalculateTotalCost()
+    {
+        if (_selectedSubscriptions.Count == 0)
+        {
+            _totalCost = 0m;
+            return;
+        }
+
+        try
+        {
+            var now = DateTime.UtcNow;
+            var thirtyDaysAgo = now.AddDays(-30);
+
+            var tasks = _selectedSubscriptions.Select(async info =>
+            {
+                try
+                {
+                    var result = await CostAnalysisService.GetCostsAsync(
+                        info.Subscription.SubscriptionId,
+                        info.Subscription.TenantId,
+                        thirtyDaysAgo,
+                        now);
+                    return result.TotalCost;
+                }
+                catch
+                {
+                    return 0m;
+                }
+            });
+
+            var results = await Task.WhenAll(tasks);
+            _totalCost = results.Sum();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to calculate total: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var dialog = await DialogService.ShowAsync<ConnectTenantDialog>("Connect Tenant");
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            TenantClientManager.ConnectTenant(tenantId);
+            Snackbar.Add($"Connected to tenant: {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant: {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+
+    private static string FormatCurrency(decimal amount)
+    {
+        return amount.ToString("C2", CultureInfo.CreateSpecificCulture("en-US"));
+    }
+
+    private class SubscriptionCostInfo
+    {
+        public required TenantSubscription Subscription { get; init; }
+        public decimal? CurrentSpend { get; set; }
+        public decimal? MonthForecast { get; set; }
+        public bool IsLoading { get; set; }
+    }
+}

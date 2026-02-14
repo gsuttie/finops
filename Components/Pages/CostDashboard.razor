@@ -1,0 +1,512 @@
+@page "/costs/dashboard"
+@using FinOps.Models
+@using FinOps.Services
+@using FinOps.Components.Dialogs
+@using System.Globalization
+@inject IAzureSubscriptionService SubscriptionService
+@inject ICostAnalysisService CostAnalysisService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+
+<PageTitle>Cost Dashboard</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Cost Dashboard</MudText>
+
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudTable T="TenantSubscription" Items="@_subscriptions" MultiSelection="true"
+          SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSelectedSubscriptionsChanged"
+          Loading="@_loading" Hover="true" Dense="true" Elevation="2" Class="mb-4">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Select Subscriptions</MudText>
+        <MudSpacer />
+        <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">
+            @_selectedSubscriptions.Count selected
+        </MudText>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
+        </MudTd>
+        <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="MudBlazor.Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+@if (_selectedSubscriptions.Count > 0)
+{
+    if (_loadingDashboard)
+    {
+        <div style="text-align: center; padding: 60px;">
+            <MudProgressCircular Indeterminate="true" Size="MudBlazor.Size.Large" />
+            <MudText Typo="Typo.h6" Color="MudBlazor.Color.Secondary" Class="mt-4">Loading dashboard data...</MudText>
+        </div>
+    }
+    else if (_dashboardData is not null)
+    {
+        @* Selected Subscriptions Summary *@
+        <MudPaper Class="pa-3 mb-3" Elevation="1">
+            <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">
+                Showing aggregated data for @_selectedSubscriptions.Count subscription(s):
+                @string.Join(", ", _selectedSubscriptions.Select(s => s.DisplayName))
+            </MudText>
+        </MudPaper>
+
+        @* KPI Cards *@
+        <MudGrid Spacing="3" Class="mb-4">
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4" Elevation="2" Style="border-left: 4px solid #4caf50;">
+                    <MudText Typo="Typo.overline" Color="MudBlazor.Color.Secondary">Current Month Spend</MudText>
+                    <MudText Typo="Typo.h5" Class="mt-2">
+                        @FormatCurrency(_dashboardData.CurrentMonthSpend)
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">USD</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4" Elevation="2" Style="border-left: 4px solid #2196f3;">
+                    <MudText Typo="Typo.overline" Color="MudBlazor.Color.Secondary">Month Forecast</MudText>
+                    <MudText Typo="Typo.h5" Class="mt-2">
+                        @FormatCurrency(_dashboardData.MonthForecast)
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">Projected</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4" Elevation="2" Style="border-left: 4px solid #ff9800;">
+                    <MudText Typo="Typo.overline" Color="MudBlazor.Color.Secondary">Budget</MudText>
+                    @if (_dashboardData.BudgetAmount.HasValue)
+                    {
+                        <MudText Typo="Typo.h5" Class="mt-2">
+                            @FormatCurrency(_dashboardData.BudgetAmount.Value)
+                        </MudText>
+                        <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">
+                            @(_dashboardData.BudgetRemaining.HasValue ? $"{FormatCurrency(_dashboardData.BudgetRemaining.Value)} remaining" : "")
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.h6" Class="mt-2" Color="MudBlazor.Color.Secondary">No Budget</MudText>
+                        <MudLink Href="/budgets/subscriptions" Typo="Typo.caption">Create one</MudLink>
+                    }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="pa-4" Elevation="2" Style="border-left: 4px solid #9c27b0;">
+                    <MudText Typo="Typo.overline" Color="MudBlazor.Color.Secondary">Potential Savings</MudText>
+                    @if (_dashboardData.PotentialSavings.HasValue && _dashboardData.PotentialSavings.Value > 0)
+                    {
+                        <MudText Typo="Typo.h5" Class="mt-2">
+                            @FormatCurrency(_dashboardData.PotentialSavings.Value)
+                        </MudText>
+                        <MudLink Href="/advisor" Typo="Typo.caption">View recommendations</MudLink>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.h6" Class="mt-2" Color="MudBlazor.Color.Secondary">$0.00</MudText>
+                        <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">No cost recommendations</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* Top Cost Drivers *@
+        <MudText Typo="Typo.h5" Class="mb-3">Top Cost Drivers (Current Month)</MudText>
+        <MudGrid Spacing="3" Class="mb-4">
+            @* Top Services *@
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-3">Top 5 Services</MudText>
+                    @if (_dashboardData.TopServices.Count > 0)
+                    {
+                        <MudList T="string" Dense="true">
+                            @foreach (var (item, index) in _dashboardData.TopServices.Select((s, i) => (s, i)))
+                            {
+                                <MudListItem>
+                                    <MudStack Row="false" Spacing="1">
+                                        <MudText Typo="Typo.body2"><strong>@(index + 1). @item.Name</strong></MudText>
+                                        <MudStack Row="true" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Cost:</MudText>
+                                            <MudText Typo="Typo.body2"><strong>@FormatCurrency(item.Cost)</strong></MudText>
+                                        </MudStack>
+                                        <MudProgressLinear Value="@((double)item.Percentage)" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Small" />
+                                        <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">@item.Percentage.ToString("F1")% of total</MudText>
+                                    </MudStack>
+                                </MudListItem>
+                                @if (index < _dashboardData.TopServices.Count - 1)
+                                {
+                                    <MudDivider />
+                                }
+                            }
+                        </MudList>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">No data available.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            @* Top Resource Groups *@
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-3">Top 5 Resource Groups</MudText>
+                    @if (_dashboardData.TopResourceGroups.Count > 0)
+                    {
+                        <MudList T="string" Dense="true">
+                            @foreach (var (item, index) in _dashboardData.TopResourceGroups.Select((s, i) => (s, i)))
+                            {
+                                <MudListItem>
+                                    <MudStack Row="false" Spacing="1">
+                                        <MudText Typo="Typo.body2"><strong>@(index + 1). @item.Name</strong></MudText>
+                                        <MudStack Row="true" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Cost:</MudText>
+                                            <MudText Typo="Typo.body2"><strong>@FormatCurrency(item.Cost)</strong></MudText>
+                                        </MudStack>
+                                        <MudProgressLinear Value="@((double)item.Percentage)" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small" />
+                                        <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">@item.Percentage.ToString("F1")% of total</MudText>
+                                    </MudStack>
+                                </MudListItem>
+                                @if (index < _dashboardData.TopResourceGroups.Count - 1)
+                                {
+                                    <MudDivider />
+                                }
+                            }
+                        </MudList>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">No data available.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            @* Top Locations *@
+            <MudItem xs="12" md="4">
+                <MudPaper Class="pa-4" Elevation="2">
+                    <MudText Typo="Typo.h6" Class="mb-3">Top 5 Locations</MudText>
+                    @if (_dashboardData.TopLocations.Count > 0)
+                    {
+                        <MudList T="string" Dense="true">
+                            @foreach (var (item, index) in _dashboardData.TopLocations.Select((s, i) => (s, i)))
+                            {
+                                <MudListItem>
+                                    <MudStack Row="false" Spacing="1">
+                                        <MudText Typo="Typo.body2"><strong>@(index + 1). @item.Name</strong></MudText>
+                                        <MudStack Row="true" Justify="Justify.SpaceBetween">
+                                            <MudText Typo="Typo.body2">Cost:</MudText>
+                                            <MudText Typo="Typo.body2"><strong>@FormatCurrency(item.Cost)</strong></MudText>
+                                        </MudStack>
+                                        <MudProgressLinear Value="@((double)item.Percentage)" Color="MudBlazor.Color.Tertiary" Size="MudBlazor.Size.Small" />
+                                        <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">@item.Percentage.ToString("F1")% of total</MudText>
+                                    </MudStack>
+                                </MudListItem>
+                                @if (index < _dashboardData.TopLocations.Count - 1)
+                                {
+                                    <MudDivider />
+                                }
+                            }
+                        </MudList>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">No data available.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* Trend Data Table (simplified) *@
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-4">Recent Cost Trend</MudText>
+            @if (_dashboardData.TrendData.Count > 0)
+            {
+                <MudText Typo="Typo.body2">@_dashboardData.TrendData.Count data points from last 30 days</MudText>
+                <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">Charts will be added in a future update</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">No trend data available.</MudText>
+            }
+        </MudPaper>
+    }
+    else
+    {
+        <MudPaper Class="pa-6" Elevation="2">
+            <MudText Typo="Typo.body1" Color="MudBlazor.Color.Error">Failed to load dashboard data.</MudText>
+        </MudPaper>
+    }
+}
+else
+{
+    <MudPaper Class="pa-6" Elevation="2">
+        <MudText Typo="Typo.h6" Color="MudBlazor.Color.Secondary" Align="Align.Center">
+            Please select one or more subscriptions to view the cost dashboard.
+        </MudText>
+    </MudPaper>
+}
+
+@code {
+    private List<TenantSubscription> _subscriptions = [];
+    private HashSet<TenantSubscription> _selectedSubscriptions = [];
+    private CostDashboardData? _dashboardData;
+    private bool _loading = true;
+    private bool _loadingDashboard;
+    private string? _homeTenantId;
+    private string? _homeTenantDisplayName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_homeTenantId, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loading = true;
+        StateHasChanged();
+
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load subscriptions: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnSelectedSubscriptionsChanged(HashSet<TenantSubscription> selected)
+    {
+        _selectedSubscriptions = selected;
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        if (_selectedSubscriptions.Count == 0)
+        {
+            _dashboardData = null;
+            return;
+        }
+
+        _loadingDashboard = true;
+        _dashboardData = null;
+        StateHasChanged();
+
+        try
+        {
+            // Load data for all selected subscriptions
+            var tasks = _selectedSubscriptions.Select(sub =>
+                CostAnalysisService.GetDashboardDataAsync(sub));
+            var results = await Task.WhenAll(tasks);
+
+            // Aggregate the data
+            _dashboardData = AggregateDashboardData(results);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load dashboard data: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loadingDashboard = false;
+            StateHasChanged();
+        }
+    }
+
+    private CostDashboardData AggregateDashboardData(CostDashboardData[] results)
+    {
+        if (results.Length == 0)
+            throw new InvalidOperationException("No data to aggregate");
+
+        if (results.Length == 1)
+            return results[0];
+
+        // Aggregate costs across all subscriptions
+        var totalCurrentSpend = results.Sum(r => r.CurrentMonthSpend);
+        var totalForecast = results.Sum(r => r.MonthForecast);
+        var totalBudget = results.Sum(r => r.BudgetAmount ?? 0);
+        var totalSavings = results.Sum(r => r.PotentialSavings ?? 0);
+        var currency = results.First().Currency;
+
+        // Aggregate top services across all subscriptions
+        var allServices = results.SelectMany(r => r.TopServices)
+            .GroupBy(s => s.Name)
+            .Select(g => new CostBreakdownItem
+            {
+                Name = g.Key,
+                Cost = g.Sum(s => s.Cost),
+                Currency = currency,
+                Percentage = 0 // Will recalculate below
+            })
+            .OrderByDescending(s => s.Cost)
+            .Take(5)
+            .ToList();
+
+        // Recalculate percentages
+        var servicesTotal = allServices.Sum(s => s.Cost);
+        if (servicesTotal > 0)
+        {
+            allServices = allServices.Select(s => new CostBreakdownItem
+            {
+                Name = s.Name,
+                Cost = s.Cost,
+                Currency = s.Currency,
+                Percentage = Math.Round((s.Cost / servicesTotal) * 100, 1)
+            }).ToList();
+        }
+
+        // Aggregate top resource groups
+        var allResourceGroups = results.SelectMany(r => r.TopResourceGroups)
+            .GroupBy(rg => rg.Name)
+            .Select(g => new CostBreakdownItem
+            {
+                Name = g.Key,
+                Cost = g.Sum(rg => rg.Cost),
+                Currency = currency,
+                Percentage = 0
+            })
+            .OrderByDescending(rg => rg.Cost)
+            .Take(5)
+            .ToList();
+
+        var rgTotal = allResourceGroups.Sum(rg => rg.Cost);
+        if (rgTotal > 0)
+        {
+            allResourceGroups = allResourceGroups.Select(rg => new CostBreakdownItem
+            {
+                Name = rg.Name,
+                Cost = rg.Cost,
+                Currency = rg.Currency,
+                Percentage = Math.Round((rg.Cost / rgTotal) * 100, 1)
+            }).ToList();
+        }
+
+        // Aggregate top locations
+        var allLocations = results.SelectMany(r => r.TopLocations)
+            .GroupBy(l => l.Name)
+            .Select(g => new CostBreakdownItem
+            {
+                Name = g.Key,
+                Cost = g.Sum(l => l.Cost),
+                Currency = currency,
+                Percentage = 0
+            })
+            .OrderByDescending(l => l.Cost)
+            .Take(5)
+            .ToList();
+
+        var locTotal = allLocations.Sum(l => l.Cost);
+        if (locTotal > 0)
+        {
+            allLocations = allLocations.Select(l => new CostBreakdownItem
+            {
+                Name = l.Name,
+                Cost = l.Cost,
+                Currency = l.Currency,
+                Percentage = Math.Round((l.Cost / locTotal) * 100, 1)
+            }).ToList();
+        }
+
+        // Merge trend data from all subscriptions
+        var allTrendData = results
+            .SelectMany(r => r.TrendData)
+            .GroupBy(d => d.Date)
+            .Select(g => new CostDataPoint
+            {
+                Date = g.Key,
+                Cost = g.Sum(d => d.Cost),
+                Currency = currency
+            })
+            .OrderBy(d => d.Date)
+            .ToList();
+
+        return new CostDashboardData
+        {
+            SubscriptionId = "Multiple",
+            SubscriptionName = $"{results.Length} Subscriptions",
+            CurrentMonthSpend = totalCurrentSpend,
+            MonthForecast = totalForecast,
+            Currency = currency,
+            BudgetAmount = totalBudget > 0 ? totalBudget : null,
+            BudgetRemaining = totalBudget > 0 ? totalBudget - totalCurrentSpend : null,
+            PotentialSavings = totalSavings > 0 ? totalSavings : null,
+            TopServices = allServices,
+            TopResourceGroups = allResourceGroups,
+            TopLocations = allLocations,
+            TrendData = allTrendData
+        };
+    }
+
+    private MudBlazor.Color GetStateColor(string? state) => state switch
+    {
+        "Enabled" => MudBlazor.Color.Success,
+        "Disabled" => MudBlazor.Color.Error,
+        "Warned" => MudBlazor.Color.Warning,
+        _ => MudBlazor.Color.Default
+    };
+
+    private static string FormatCurrency(decimal amount)
+    {
+        return amount.ToString("C2", CultureInfo.CreateSpecificCulture("en-US"));
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var dialog = await DialogService.ShowAsync<ConnectTenantDialog>("Connect Tenant");
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            TenantClientManager.ConnectTenant(tenantId);
+            Snackbar.Add($"Connected to tenant: {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant: {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+}

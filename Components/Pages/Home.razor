@@ -115,6 +115,17 @@
             </MudCard>
         </MudItem>
         <MudItem xs="12" sm="6" md="4">
+            <MudCard Class="feature-card" Style="border-top: 3px solid #00bcd4;" @onclick='() => Nav.NavigateTo("costs/overview")'>
+                <MudCardContent Class="text-center pa-6">
+                    <MudIcon Icon="@Icons.Material.Filled.AttachMoney" Size="Size.Large" Color="Color.Info" Class="mb-3" />
+                    <MudText Typo="Typo.h6">Cost Management</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                        Analyze costs, forecasts & identify savings
+                    </MudText>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
             <MudCard Class="feature-card" Style="border-top: 3px solid #2196f3;" @onclick='() => Nav.NavigateTo("tagging")'>
                 <MudCardContent Class="text-center pa-6">
                     <MudIcon Icon="@Icons.Material.Filled.Label" Size="Size.Large" Color="Color.Info" Class="mb-3" />

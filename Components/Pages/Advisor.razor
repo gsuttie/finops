@@ -255,7 +255,10 @@
                 r.Impact.Contains(_recommendationSearchText, StringComparison.OrdinalIgnoreCase));
         }
 
-        return categoryRecs.OrderBy(r => GetImpactPriority(r.Impact));
+        return categoryRecs
+            .GroupBy(r => new { r.Problem, r.Solution, r.Impact, r.SubscriptionId })
+            .Select(g => g.First())
+            .OrderBy(r => GetImpactPriority(r.Impact));
     }
 
     protected override async Task OnInitializedAsync()

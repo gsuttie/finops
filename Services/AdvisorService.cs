@@ -283,4 +283,97 @@ public class AdvisorService(
 
         return results;
     }
+
+    public async Task<decimal> GetPotentialCostSavingsAsync(
+        IEnumerable<TenantSubscription> subscriptions)
+    {
+        var subList = subscriptions.ToList();
+        if (subList.Count == 0)
+            return 0m;
+
+        logger.LogInformation("Calculating potential cost savings for {Count} subscriptions", subList.Count);
+
+        var tenantGroups = subList.GroupBy(s => s.TenantId);
+        decimal totalSavings = 0m;
+
+        foreach (var group in tenantGroups)
+        {
+            var client = tenantClientManager.GetClientForTenant(group.Key);
+
+            foreach (var sub in group)
+            {
+                try
+                {
+                    var scope = new ResourceIdentifier($"/subscriptions/{sub.SubscriptionId}");
+                    var collection = client.GetResourceRecommendationBases(scope);
+
+                    await foreach (var rec in collection.GetAllAsync())
+                    {
+                        var data = rec.Data;
+
+                        // Only process Cost category recommendations
+                        if (data.Category?.ToString().Equals("Cost", StringComparison.OrdinalIgnoreCase) != true)
+                            continue;
+
+                        // Try to extract savings from ExtendedProperties
+                        if (data.ExtendedProperties != null)
+                        {
+                            decimal savings = 0m;
+
+                            // Try common property names for cost savings
+                            var savingsKeys = new[]
+                            {
+                                "annualSavingsAmount",
+                                "savingsAmount",
+                                "monthlySavings",
+                                "estimatedSavings",
+                                "savings",
+                                "annualSavings"
+                            };
+
+                            foreach (var key in savingsKeys)
+                            {
+                                if (data.ExtendedProperties.TryGetValue(key, out var value))
+                                {
+                                    var valueStr = value?.ToString();
+                                    if (!string.IsNullOrEmpty(valueStr))
+                                    {
+                                        // Try to parse as decimal
+                                        if (decimal.TryParse(valueStr, out var parsedValue))
+                                        {
+                                            savings = parsedValue;
+                                            logger.LogInformation(
+                                                "Found savings of {Savings:C2} for recommendation {Name} (key: {Key})",
+                                                savings, data.Name, key);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // If this is an annual savings, convert to monthly
+                            if (savings > 0 && data.ExtendedProperties.ContainsKey("annualSavingsAmount"))
+                            {
+                                savings = savings / 12m;
+                                logger.LogInformation("Converted annual savings to monthly: {MonthlySavings:C2}", savings);
+                            }
+
+                            totalSavings += savings;
+                        }
+                    }
+
+                    logger.LogInformation(
+                        "Subscription {SubName} potential savings: {Savings:C2}",
+                        sub.DisplayName, totalSavings);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Failed to get cost savings for subscription {SubId}", sub.SubscriptionId);
+                }
+            }
+        }
+
+        logger.LogInformation("Total potential cost savings across all subscriptions: {TotalSavings:C2}", totalSavings);
+        return totalSavings;
+    }
 }
