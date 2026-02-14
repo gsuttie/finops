@@ -1,0 +1,453 @@
+@page "/dashboard/overview"
+@using FinOps.Models
+@using FinOps.Services
+@using System.Globalization
+@inject IAzureSubscriptionService SubscriptionService
+@inject ICostAnalysisService CostAnalysisService
+@inject IBudgetService BudgetService
+@inject IAdvisorService AdvisorService
+@inject TenantClientManager TenantClientManager
+@inject NavigationManager Navigation
+
+<PageTitle>Overview - FinOps Dashboard</PageTitle>
+
+<div style="padding-top: 60px;">
+
+<style>
+    .kpi-label {
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 12px;
+        opacity: 0.7;
+    }
+
+    .kpi-value {
+        font-size: 36px;
+        font-weight: 700;
+        line-height: 1.2;
+        margin-bottom: 8px;
+    }
+
+    .kpi-subtitle {
+        font-size: 13px;
+        opacity: 0.7;
+    }
+
+    .kpi-change-positive {
+        color: #10b981;
+    }
+
+    .kpi-change-negative {
+        color: #ef4444;
+    }
+
+    .kpi-warning {
+        color: #f59e0b;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .subscription-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+
+    .subscription-name {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    .subscription-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+    }
+
+    .subscription-change {
+        font-size: 14px;
+        font-weight: 600;
+    }
+
+    .subscription-amount {
+        font-size: 28px;
+        font-weight: 700;
+        margin-bottom: 12px;
+    }
+
+    .budget-info {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        opacity: 0.7;
+        margin-top: 8px;
+        margin-bottom: 12px;
+    }
+
+    .alert-box {
+        background: rgba(239, 68, 68, 0.1);
+        border-left: 3px solid #ef4444;
+        padding: 10px 12px;
+        border-radius: 4px;
+        margin-top: 12px;
+    }
+
+    .alert-text {
+        color: #ef4444;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .utilization-bar {
+        height: 12px;
+        border-radius: 6px;
+        overflow: hidden;
+        display: flex;
+        margin-bottom: 16px;
+        background: rgba(0, 0, 0, 0.05);
+    }
+
+    .utilization-segment {
+        height: 100%;
+    }
+
+    .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        opacity: 0.7;
+    }
+
+    .legend-color {
+        width: 12px;
+        height: 12px;
+        border-radius: 2px;
+    }
+</style>
+
+<!-- Top Navigation Tabs -->
+<MudPaper Class="mb-4 pa-4" Elevation="1">
+    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Navigation.NavigateTo("/dashboard/overview"))">
+            Overview
+        </MudButton>
+        <MudButton Variant="Variant.Text" OnClick="@(() => Navigation.NavigateTo("/costs/overview"))">
+            Subscriptions
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+<!-- Subscription Selector -->
+@if (_subscriptions.Count > 0)
+{
+    <MudPaper Class="mb-4 pa-4" Elevation="1">
+        <MudStack Row="true" Spacing="3" AlignItems="AlignItems.Center">
+            <MudText Typo="Typo.h6">Select Subscription:</MudText>
+            <MudSelect T="TenantSubscription" Value="_selectedSubscription" ValueChanged="OnSubscriptionChanged"
+                       Label="Choose a subscription" Variant="Variant.Outlined"
+                       Style="min-width: 400px;"
+                       ToStringFunc="@(s => s?.DisplayName ?? "Select...")">
+                @foreach (var sub in _subscriptions)
+                {
+                    <MudSelectItem T="TenantSubscription" Value="@sub">
+                        @sub.DisplayName
+                    </MudSelectItem>
+                }
+            </MudSelect>
+        </MudStack>
+    </MudPaper>
+}
+
+@if (_loadingData)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_selectedSubscription == null)
+{
+    <MudPaper Class="pa-8" Elevation="1" Style="text-align: center;">
+        <MudIcon Icon="@Icons.Material.Filled.Dashboard" Size="Size.Large" Style="font-size: 64px; opacity: 0.5;" />
+        <MudText Typo="Typo.h5" Class="mt-4" Style="opacity: 0.7;">Select a subscription to view dashboard</MudText>
+    </MudPaper>
+}
+else
+{
+
+    <!-- KPI Cards -->
+    <MudGrid>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <div class="kpi-label">Current Spend</div>
+                <div class="kpi-value">@FormatCurrency(_currentSpend)</div>
+                <div class="kpi-subtitle kpi-change-positive">@_changeVsLastMonth vs last month</div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <div class="kpi-label">Forecast</div>
+                <div class="kpi-value" style="color: #ef4444;">@FormatCurrency(_forecast)</div>
+                @if (_willExceedBudget)
+                {
+                    <div class="kpi-subtitle kpi-warning">
+                        <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" />
+                        Will exceed budget
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <div class="kpi-label">Budget</div>
+                <div class="kpi-value">@FormatCurrency(_totalBudget)</div>
+                <div class="kpi-subtitle">@(_budgetPercentage.ToString("F1"))% consumed</div>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="pa-4" Elevation="2">
+                <div class="kpi-label">Potential Savings</div>
+                <div class="kpi-value" style="color: #10b981;">@FormatCurrency(_potentialSavings)</div>
+                <div class="kpi-subtitle">Across all subscriptions</div>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    <!-- Resource Group Budget Breakdown -->
+    <MudPaper Class="pa-4 mt-4" Elevation="2">
+        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-3">
+            <MudText Typo="Typo.h6">Resource Group Breakdown</MudText>
+            <MudText Typo="Typo.h6" Style="opacity: 0.7;">@(_budgetPercentage.ToString("F1"))% of budget used</MudText>
+        </MudStack>
+
+        <div class="utilization-bar">
+            @foreach (var sub in _subscriptionData)
+            {
+                <div class="utilization-segment"
+                     style="background-color: @sub.Color; width: @(sub.Percentage.ToString("F2"))%;"
+                     title="@sub.Name: @FormatCurrency(sub.CurrentSpend)"></div>
+            }
+        </div>
+
+        <div class="legend">
+            @foreach (var sub in _subscriptionData)
+            {
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: @sub.Color;"></div>
+                    <span>@sub.Name (@FormatCurrency(sub.CurrentSpend))</span>
+                </div>
+            }
+        </div>
+    </MudPaper>
+
+    <!-- Resource Groups Grid -->
+    <MudText Typo="Typo.h6" Class="mt-6 mb-4">Top Resource Groups</MudText>
+    <MudGrid>
+        @foreach (var sub in _subscriptionData)
+        {
+            <MudItem xs="12" sm="6" md="6" lg="6">
+                <MudPaper Class="pa-4" Elevation="2" Style="height: 100%;">
+                    <div class="subscription-header">
+                        <div class="subscription-name">
+                            <div class="subscription-indicator" style="background-color: @sub.Color;"></div>
+                            <span>@sub.Name</span>
+                        </div>
+                        <div class="subscription-change" style="color: @(sub.ChangePercentage >= 0 ? "#f59e0b" : "#10b981");">
+                            @(sub.ChangePercentage >= 0 ? "+" : "")@sub.ChangePercentage.ToString("F1")%
+                        </div>
+                    </div>
+
+                    <div class="subscription-amount">@FormatCurrency(sub.CurrentSpend)</div>
+
+                    <MudProgressLinear Value="@sub.BudgetUtilization" Color="@GetProgressColor(sub.BudgetUtilization)"
+                                       Style="height: 8px; border-radius: 4px;" />
+
+                    <div class="budget-info">
+                        <span>Budget: @FormatCurrency(sub.Budget)</span>
+                        <span>@sub.BudgetUtilization.ToString("F1")%</span>
+                    </div>
+
+                    @if (sub.HighPriorityIssues > 0)
+                    {
+                        <div class="alert-box">
+                            <div class="alert-text">
+                                <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Small" />
+                                @sub.HighPriorityIssues high priority issue@(sub.HighPriorityIssues > 1 ? "s" : "")
+                            </div>
+                        </div>
+                    }
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+</div>
+
+@code {
+    private List<TenantSubscription> _subscriptions = new();
+    private TenantSubscription? _selectedSubscription = null;
+    private bool _loadingData = false;
+
+    private decimal _currentSpend = 0m;
+    private decimal _forecast = 0m;
+    private decimal _totalBudget = 0m;
+    private decimal _potentialSavings = 0m;
+    private double _budgetPercentage = 0;
+    private bool _willExceedBudget = false;
+    private string _changeVsLastMonth = "+0%";
+
+    private List<SubscriptionDashboardData> _subscriptionData = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load subscriptions only
+        _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        StateHasChanged();
+    }
+
+    private async Task OnSubscriptionChanged(TenantSubscription? subscription)
+    {
+        _selectedSubscription = subscription;
+        if (_selectedSubscription != null)
+        {
+            await LoadDashboardDataForSubscription(_selectedSubscription);
+        }
+    }
+
+    private async Task LoadDashboardDataForSubscription(TenantSubscription subscription)
+    {
+        _loadingData = true;
+        StateHasChanged();
+
+        try
+        {
+            var now = DateTime.UtcNow;
+            var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+            var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+            var lastMonthStart = monthStart.AddMonths(-1);
+            var lastMonthEnd = monthStart.AddDays(-1);
+
+            // Define colors for different resource groups/services
+            var colors = new[] { "#ef4444", "#3b82f6", "#10b981", "#f59e0b" };
+
+            // Batch 1: Load current month spend
+            var currentSpendResult = await CostAnalysisService.GetCostsAsync(
+                subscription.SubscriptionId, subscription.TenantId, monthStart, now);
+            _currentSpend = currentSpendResult.TotalCost;
+            StateHasChanged();
+            await Task.Delay(800);
+
+            // Batch 2: Load last month spend
+            var lastMonthSpendResult = await CostAnalysisService.GetCostsAsync(
+                subscription.SubscriptionId, subscription.TenantId, lastMonthStart, lastMonthEnd);
+            var lastMonthSpend = lastMonthSpendResult.TotalCost;
+
+            // Calculate change vs last month
+            var changePercentage = lastMonthSpend > 0
+                ? ((_currentSpend - lastMonthSpend) / lastMonthSpend * 100)
+                : 0;
+            _changeVsLastMonth = $"{(changePercentage >= 0 ? "+" : "")}{changePercentage:F1}%";
+            StateHasChanged();
+            await Task.Delay(800);
+
+            // Batch 3: Load forecast
+            var forecastResult = await CostAnalysisService.GetCostForecastAsync(
+                subscription.SubscriptionId, subscription.TenantId, now, monthEnd);
+            _forecast = forecastResult.TotalForecast;
+            StateHasChanged();
+            await Task.Delay(800);
+
+            // Batch 4: Load budgets
+            var budgets = await BudgetService.GetBudgetsAsync(subscription);
+            _totalBudget = budgets.FirstOrDefault()?.Amount ?? 0m;
+            _budgetPercentage = _totalBudget > 0 ? (double)(_currentSpend / _totalBudget * 100) : 0;
+            _willExceedBudget = _forecast > _totalBudget && _totalBudget > 0;
+            StateHasChanged();
+            await Task.Delay(800);
+
+            // Batch 5: Load potential savings
+            _potentialSavings = await AdvisorService.GetPotentialCostSavingsAsync(new[] { subscription });
+            StateHasChanged();
+            await Task.Delay(800);
+
+            // Batch 6: Load recommendations for high priority issues
+            var recommendations = await AdvisorService.GetRecommendationsAsync(new[] { subscription });
+            var highPriorityIssues = recommendations.Count(r => r.Impact == "High" && r.Category == "Cost");
+            await Task.Delay(800);
+
+            // Batch 7: Load breakdown by resource group (top 4)
+            var resourceGroupBreakdown = await CostAnalysisService.GetCostsByDimensionAsync(
+                subscription.SubscriptionId, subscription.TenantId, monthStart, now, "ResourceGroup", 4);
+
+            _subscriptionData = resourceGroupBreakdown.Select((rg, index) => new SubscriptionDashboardData
+            {
+                Name = rg.Name,
+                SubscriptionId = subscription.SubscriptionId,
+                CurrentSpend = rg.Cost,
+                Budget = _totalBudget / 4, // Distribute budget equally for display purposes
+                BudgetUtilization = _totalBudget > 0 ? (double)(rg.Cost / (_totalBudget / 4) * 100) : 0,
+                ChangePercentage = (double)changePercentage,
+                HighPriorityIssues = index == 0 ? highPriorityIssues : 0, // Show issues on first card only
+                Color = colors[index % colors.Length]
+            }).ToList();
+
+            // Calculate percentages for utilization bar
+            var totalSpend = _subscriptionData.Sum(s => s.CurrentSpend);
+            foreach (var item in _subscriptionData)
+            {
+                item.Percentage = totalSpend > 0 ? (double)(item.CurrentSpend / totalSpend * 100) : 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading dashboard: {ex.Message}");
+        }
+        finally
+        {
+            _loadingData = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FormatCurrency(decimal amount)
+    {
+        return "£" + amount.ToString("N2", CultureInfo.CreateSpecificCulture("en-GB"));
+    }
+
+    private static Color GetProgressColor(double percentage)
+    {
+        if (percentage >= 100) return Color.Error;
+        if (percentage >= 90) return Color.Warning;
+        return Color.Success;
+    }
+
+    private class SubscriptionDashboardData
+    {
+        public required string Name { get; init; }
+        public required string SubscriptionId { get; init; }
+        public required decimal CurrentSpend { get; init; }
+        public required decimal Budget { get; init; }
+        public required double BudgetUtilization { get; init; }
+        public required double ChangePercentage { get; init; }
+        public required int HighPriorityIssues { get; init; }
+        public required string Color { get; init; }
+        public double Percentage { get; set; }
+    }
+}
