@@ -186,7 +186,11 @@
         </HeaderContent>
         <RowTemplate>
             <MudTd DataLabel="Resource Group">@context.ResourceGroupName</MudTd>
-            <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="Name">
+                <MudLink Href="@GetBudgetPortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                    @context.Name
+                </MudLink>
+            </MudTd>
             <MudTd DataLabel="Amount">@(context.Amount?.ToString("C2"))</MudTd>
             <MudTd DataLabel="Current Spend">
                 @if (context.CurrentSpend.HasValue && context.Amount.HasValue && context.Amount.Value > 0)
@@ -492,4 +496,21 @@
     /// </summary>
     private static string GetAzurePortalUrl(TenantSubscription subscription) =>
         $"https://portal.azure.com/#@{subscription.TenantId}/resource/subscriptions/{subscription.SubscriptionId}/overview";
+
+    /// <summary>
+    /// Generates the Azure portal URL for a budget resource.
+    /// </summary>
+    private static string GetBudgetPortalUrl(BudgetInfo budget)
+    {
+        if (!string.IsNullOrEmpty(budget.ResourceGroupName))
+        {
+            // Resource group budget
+            return $"https://portal.azure.com/#@{budget.TenantId}/resource/subscriptions/{budget.SubscriptionId}/resourceGroups/{budget.ResourceGroupName}/providers/Microsoft.Consumption/budgets/{budget.Name}";
+        }
+        else
+        {
+            // Subscription budget
+            return $"https://portal.azure.com/#@{budget.TenantId}/resource/subscriptions/{budget.SubscriptionId}/providers/Microsoft.Consumption/budgets/{budget.Name}";
+        }
+    }
 }
