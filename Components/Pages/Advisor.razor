@@ -118,6 +118,10 @@
                     @GetCategoryDisplayName(group.Key) (@group.Value)
                 </MudChip>
             }
+            <MudSpacer />
+            <MudTextField T="string" @bind-Value="_recommendationSearchText" Placeholder="Search recommendations..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium" Immediate="true" Style="max-width: 300px;" />
         </MudStack>
     </MudPaper>
 }
@@ -157,7 +161,6 @@
                                 <HeaderContent>
                                     <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.Impact))">Impact</MudTableSortLabel></MudTh>
                                     <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.Problem))">Problem</MudTableSortLabel></MudTh>
-                                    <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.Solution))">Solution</MudTableSortLabel></MudTh>
                                     <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.ImpactedValue))">Impacted Resource</MudTableSortLabel></MudTh>
                                     <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.SubscriptionName))">Subscription</MudTableSortLabel></MudTh>
                                     <MudTh><MudTableSortLabel T="AdvisorRecommendation" SortBy="@(new Func<AdvisorRecommendation, object>(x => x.LastUpdated ?? DateTimeOffset.MinValue))">Last Updated</MudTableSortLabel></MudTh>
@@ -169,12 +172,17 @@
                                         </MudChip>
                                     </MudTd>
                                     <MudTd DataLabel="Problem">@context.Problem</MudTd>
-                                    <MudTd DataLabel="Solution">@context.Solution</MudTd>
                                     <MudTd DataLabel="Impacted Resource">
-                                        <MudText Typo="Typo.body2">@context.ImpactedValue</MudText>
+                                        <MudLink Href="@GetResourceUrl(context)" Target="_blank" Typo="Typo.body2">
+                                            @context.ImpactedValue
+                                        </MudLink>
                                         <MudText Typo="Typo.caption" Color="Color.Secondary">@context.ImpactedField</MudText>
                                     </MudTd>
-                                    <MudTd DataLabel="Subscription">@context.SubscriptionName</MudTd>
+                                    <MudTd DataLabel="Subscription">
+                                        <MudLink Href="@GetSubscriptionUrl(context)" Target="_blank" Typo="Typo.body2">
+                                            @context.SubscriptionName
+                                        </MudLink>
+                                    </MudTd>
                                     <MudTd DataLabel="Last Updated">@(context.LastUpdated?.ToString("yyyy-MM-dd") ?? "—")</MudTd>
                                 </RowTemplate>
                             </MudTable>
@@ -214,6 +222,7 @@
     private bool _fetchComplete;
     private string? _loadError;
     private string _subSearchText = string.Empty;
+    private string _recommendationSearchText = string.Empty;
     private string? _homeTenantId;
     private string? _homeTenantDisplayName;
 
@@ -232,8 +241,22 @@
             .OrderByDescending(g => g.Count())
             .ToDictionary(g => g.Key, g => g.Count());
 
-    private IEnumerable<AdvisorRecommendation> GetRecommendationsByCategory(string category) =>
-        _recommendations.Where(r => r.Category == category).OrderByDescending(r => r.Impact);
+    private IEnumerable<AdvisorRecommendation> GetRecommendationsByCategory(string category)
+    {
+        var categoryRecs = _recommendations.Where(r => r.Category == category);
+
+        if (!string.IsNullOrWhiteSpace(_recommendationSearchText))
+        {
+            categoryRecs = categoryRecs.Where(r =>
+                r.Problem.Contains(_recommendationSearchText, StringComparison.OrdinalIgnoreCase) ||
+                r.ImpactedValue.Contains(_recommendationSearchText, StringComparison.OrdinalIgnoreCase) ||
+                r.ImpactedField.Contains(_recommendationSearchText, StringComparison.OrdinalIgnoreCase) ||
+                r.SubscriptionName.Contains(_recommendationSearchText, StringComparison.OrdinalIgnoreCase) ||
+                r.Impact.Contains(_recommendationSearchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        return categoryRecs.OrderBy(r => GetImpactPriority(r.Impact));
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -371,6 +394,18 @@
     private static string GetAzurePortalUrl(TenantSubscription subscription) =>
         $"https://portal.azure.com/#@{subscription.TenantId}/resource/subscriptions/{subscription.SubscriptionId}/overview";
 
+    /// <summary>
+    /// Generates the Azure portal URL for a resource from an advisor recommendation.
+    /// </summary>
+    private static string GetResourceUrl(AdvisorRecommendation recommendation) =>
+        $"https://portal.azure.com/#@{recommendation.TenantId}/resource{recommendation.ResourceId}";
+
+    /// <summary>
+    /// Generates the Azure portal URL for a subscription from an advisor recommendation.
+    /// </summary>
+    private static string GetSubscriptionUrl(AdvisorRecommendation recommendation) =>
+        $"https://portal.azure.com/#@{recommendation.TenantId}/resource/subscriptions/{recommendation.SubscriptionId}/overview";
+
     private static Color GetCategoryColor(string category) => category switch
     {
         "Cost" => Color.Success,
@@ -387,5 +422,13 @@
         "Medium" => Color.Warning,
         "Low" => Color.Info,
         _ => Color.Default
+    };
+
+    private static int GetImpactPriority(string impact) => impact switch
+    {
+        "High" => 1,
+        "Medium" => 2,
+        "Low" => 3,
+        _ => 4
     };
 }

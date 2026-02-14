@@ -9,6 +9,19 @@
 
 <PageTitle>Security Recommendations</PageTitle>
 
+<style>
+    .description-html {
+        color: #0078D4 !important; /* Azure blue for all text */
+    }
+    .description-html a {
+        color: #0078D4 !important; /* Azure blue */
+        text-decoration: underline !important;
+    }
+    .description-html a:hover {
+        color: #106EBE !important; /* Darker Azure blue on hover */
+    }
+</style>
+
 <MudText Typo="Typo.h4" Class="mb-4">Security Recommendations</MudText>
 
 @* Tenant connection bar *@
@@ -147,18 +160,17 @@
                           IconSize="Size.Medium" Immediate="true" Style="max-width: 300px;" />
         </ToolBarContent>
         <HeaderContent>
-            <MudTh><MudTableSortLabel T="SecurityRecommendation" SortBy="@(new Func<SecurityRecommendation, object>(x => x.Severity))">Severity</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="SecurityRecommendation" SortBy="@(new Func<SecurityRecommendation, object>(x => x.SubscriptionName))">Subscription</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel T="SecurityRecommendation" SortBy="@(new Func<SecurityRecommendation, object>(x => x.Category))">Category</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel T="SecurityRecommendation" SortBy="@(new Func<SecurityRecommendation, object>(x => x.RecommendationName))">Recommendation</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel T="SecurityRecommendation" SortBy="@(new Func<SecurityRecommendation, object>(x => x.ResourceName))">Resource</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel T="SecurityRecommendation" SortBy="@(new Func<SecurityRecommendation, object>(x => x.ResourceGroup))">Resource Group</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel T="SecurityRecommendation" SortBy="@(new Func<SecurityRecommendation, object>(x => x.SubscriptionName))">Subscription</MudTableSortLabel></MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd DataLabel="Severity">
-                <MudChip T="string" Color="@GetSeverityColor(context.Severity)" Size="Size.Small">
-                    @context.Severity
-                </MudChip>
+            <MudTd DataLabel="Subscription">
+                <MudLink Href="@GetSubscriptionUrl(context)" Target="_blank" Typo="Typo.body2" Underline="Underline.Always">
+                    @context.SubscriptionName
+                </MudLink>
             </MudTd>
             <MudTd DataLabel="Category">
                 <MudChip T="string" Color="@GetCategoryColor(context.Category)" Size="Size.Small">
@@ -170,11 +182,16 @@
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Class="description-html">@((MarkupString)context.Description)</MudText>
             </MudTd>
             <MudTd DataLabel="Resource">
-                <MudText Typo="Typo.body2">@context.ResourceName</MudText>
+                <MudLink Href="@GetResourceUrl(context)" Target="_blank" Typo="Typo.body2" Underline="Underline.Always">
+                    @context.ResourceName
+                </MudLink>
                 <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.ResourceType</MudText>
             </MudTd>
-            <MudTd DataLabel="Resource Group">@context.ResourceGroup</MudTd>
-            <MudTd DataLabel="Subscription">@context.SubscriptionName</MudTd>
+            <MudTd DataLabel="Resource Group">
+                <MudLink Href="@GetResourceGroupUrl(context)" Target="_blank" Typo="Typo.body2" Underline="Underline.Always">
+                    @context.ResourceGroup
+                </MudLink>
+            </MudTd>
         </RowTemplate>
         <NoRecordsContent>
             <MudText>No unhealthy security recommendations found — looking good!</MudText>
@@ -374,6 +391,24 @@
     /// </summary>
     private static string GetAzurePortalUrl(TenantSubscription subscription) =>
         $"https://portal.azure.com/#@{subscription.TenantId}/resource/subscriptions/{subscription.SubscriptionId}/overview";
+
+    /// <summary>
+    /// Generates the Azure portal URL for a resource from a security recommendation.
+    /// </summary>
+    private static string GetResourceUrl(SecurityRecommendation recommendation) =>
+        $"https://portal.azure.com/#@{recommendation.TenantId}/resource{recommendation.ResourceId}";
+
+    /// <summary>
+    /// Generates the Azure portal URL for a resource group from a security recommendation.
+    /// </summary>
+    private static string GetResourceGroupUrl(SecurityRecommendation recommendation) =>
+        $"https://portal.azure.com/#@{recommendation.TenantId}/resource/subscriptions/{recommendation.SubscriptionId}/resourceGroups/{recommendation.ResourceGroup}/overview";
+
+    /// <summary>
+    /// Generates the Azure portal URL for a subscription from a security recommendation.
+    /// </summary>
+    private static string GetSubscriptionUrl(SecurityRecommendation recommendation) =>
+        $"https://portal.azure.com/#@{recommendation.TenantId}/resource/subscriptions/{recommendation.SubscriptionId}/overview";
 
     private static Color GetSeverityColor(string severity) => severity switch
     {

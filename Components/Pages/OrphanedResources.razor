@@ -144,9 +144,21 @@
                     @context.Category
                 </MudChip>
             </MudTd>
-            <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Resource Group">@context.ResourceGroup</MudTd>
-            <MudTd DataLabel="Subscription">@context.SubscriptionName</MudTd>
+            <MudTd DataLabel="Name">
+                <MudLink Href="@GetResourcePortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                    @context.Name
+                </MudLink>
+            </MudTd>
+            <MudTd DataLabel="Resource Group">
+                <MudLink Href="@GetResourceGroupPortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                    @context.ResourceGroup
+                </MudLink>
+            </MudTd>
+            <MudTd DataLabel="Subscription">
+                <MudLink Href="@GetSubscriptionPortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                    @context.SubscriptionName
+                </MudLink>
+            </MudTd>
             <MudTd DataLabel="Location">@context.Location</MudTd>
         </RowTemplate>
         <NoRecordsContent>
@@ -322,6 +334,24 @@
     /// </summary>
     private static string GetAzurePortalUrl(TenantSubscription subscription) =>
         $"https://portal.azure.com/#@{subscription.TenantId}/resource/subscriptions/{subscription.SubscriptionId}/overview";
+
+    /// <summary>
+    /// Generates the Azure portal URL for a specific resource.
+    /// </summary>
+    private static string GetResourcePortalUrl(OrphanedResourceInfo resource) =>
+        $"https://portal.azure.com/#@{resource.TenantId}/resource{resource.ResourceId}/overview";
+
+    /// <summary>
+    /// Generates the Azure portal URL for a resource group from an orphaned resource.
+    /// </summary>
+    private static string GetResourceGroupPortalUrl(OrphanedResourceInfo resource) =>
+        $"https://portal.azure.com/#@{resource.TenantId}/resource/subscriptions/{resource.SubscriptionId}/resourceGroups/{resource.ResourceGroup}/overview";
+
+    /// <summary>
+    /// Generates the Azure portal URL for a subscription from an orphaned resource.
+    /// </summary>
+    private static string GetSubscriptionPortalUrl(OrphanedResourceInfo resource) =>
+        $"https://portal.azure.com/#@{resource.TenantId}/resource/subscriptions/{resource.SubscriptionId}/overview";
 
     private static Color GetCategoryColor(string category) => category switch
     {

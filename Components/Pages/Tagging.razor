@@ -113,8 +113,26 @@
             <MudTh>Existing Tags</MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Subscription">@(_rgSubscriptionMap.TryGetValue(context, out var sub) ? sub.DisplayName : "")</MudTd>
+            <MudTd DataLabel="Name">
+                @if (_rgSubscriptionMap.TryGetValue(context, out var rgSub))
+                {
+                    <MudLink Href="@GetResourceGroupPortalUrl(context, rgSub)" Target="_blank" Typo="Typo.body2">
+                        @context.Name
+                    </MudLink>
+                }
+                else
+                {
+                    @context.Name
+                }
+            </MudTd>
+            <MudTd DataLabel="Subscription">
+                @if (_rgSubscriptionMap.TryGetValue(context, out var sub))
+                {
+                    <MudLink Href="@GetAzurePortalUrl(sub)" Target="_blank" Typo="Typo.body2">
+                        @sub.DisplayName
+                    </MudLink>
+                }
+            </MudTd>
             <MudTd DataLabel="Location">@context.Location</MudTd>
             <MudTd DataLabel="State">@context.ProvisioningState</MudTd>
             <MudTd DataLabel="Existing Tags">
@@ -445,4 +463,10 @@
     /// </summary>
     private static string GetAzurePortalUrl(TenantSubscription subscription) =>
         $"https://portal.azure.com/#@{subscription.TenantId}/resource/subscriptions/{subscription.SubscriptionId}/overview";
+
+    /// <summary>
+    /// Generates the Azure portal URL for a resource group.
+    /// </summary>
+    private static string GetResourceGroupPortalUrl(ResourceGroupInfo resourceGroup, TenantSubscription subscription) =>
+        $"https://portal.azure.com/#@{subscription.TenantId}/resource/subscriptions/{subscription.SubscriptionId}/resourceGroups/{resourceGroup.Name}/overview";
 }

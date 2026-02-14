@@ -133,22 +133,27 @@
                           IconSize="Size.Medium" Immediate="true" Style="max-width: 300px;" />
         </ToolBarContent>
         <HeaderContent>
+            <MudTh><MudTableSortLabel T="ServiceRetirement" SortBy="@(new Func<ServiceRetirement, object>(x => x.SubscriptionName))">Subscription</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel T="ServiceRetirement" SortBy="@(new Func<ServiceRetirement, object>(x => x.ServiceName))">Service Name</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel T="ServiceRetirement" SortBy="@(new Func<ServiceRetirement, object>(x => x.RetiringFeature))">Retiring Feature</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel T="ServiceRetirement" InitialDirection="SortDirection.Ascending" SortBy="@(new Func<ServiceRetirement, object>(x => x.RetirementDate))">Retirement Date</MudTableSortLabel></MudTh>
             <MudTh><MudTableSortLabel T="ServiceRetirement" SortBy="@(new Func<ServiceRetirement, object>(x => x.ResourceCount))">Resource Count</MudTableSortLabel></MudTh>
-            <MudTh><MudTableSortLabel T="ServiceRetirement" SortBy="@(new Func<ServiceRetirement, object>(x => x.SubscriptionName))">Subscription</MudTableSortLabel></MudTh>
         </HeaderContent>
         <RowTemplate>
+            <MudTd DataLabel="Subscription">
+                <MudLink Href="@GetSubscriptionUrl(context)" Target="_blank" Typo="Typo.body2" Underline="Underline.Always">
+                    @context.SubscriptionName
+                </MudLink>
+            </MudTd>
             <MudTd DataLabel="Service Name">
                 <MudChip T="string" Color="@GetServiceColor(context.ServiceName)" Size="Size.Small">
                     @context.ServiceName
                 </MudChip>
             </MudTd>
             <MudTd DataLabel="Retiring Feature">
-                <MudTooltip Text="@context.Description">
-                    <MudText Typo="Typo.body2">@context.RetiringFeature</MudText>
-                </MudTooltip>
+                <MudLink OnClick="@(() => ShowRetirementDetails(context))" Style="cursor: pointer;" Typo="Typo.body2" Underline="Underline.Hover">
+                    @context.RetiringFeature
+                </MudLink>
             </MudTd>
             <MudTd DataLabel="Retirement Date">
                 <MudText Typo="Typo.body2" Color="@GetRetirementDateColor(context.RetirementDate)">
@@ -160,7 +165,6 @@
                     @context.ResourceCount
                 </MudChip>
             </MudTd>
-            <MudTd DataLabel="Subscription">@context.SubscriptionName</MudTd>
         </RowTemplate>
         <NoRecordsContent>
             <MudText Color="Color.Success">No service retirements found — all services up to date!</MudText>
@@ -190,17 +194,56 @@
             </HeaderContent>
             <RowTemplate>
                 <MudTd DataLabel="Subscription">
-                    <MudText Typo="Typo.body2">@context.SubscriptionName</MudText>
-                    <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+                    @{
+                        var retirement = GetRetirementForResource(context);
+                    }
+                    @if (retirement is not null)
+                    {
+                        <MudLink Href="@GetSubscriptionUrl(retirement)" Target="_blank" Typo="Typo.body2" Underline="Underline.Always">
+                            @context.SubscriptionName
+                        </MudLink>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@context.SubscriptionName</MudText>
+                    }
                 </MudTd>
                 <MudTd DataLabel="Type">@context.ResourceType</MudTd>
-                <MudTd DataLabel="Retiring Feature">@context.RetiringFeature</MudTd>
+                <MudTd DataLabel="Retiring Feature">
+                    @{
+                        var retirementForFeature = GetRetirementForResource(context);
+                    }
+                    @if (retirementForFeature is not null)
+                    {
+                        <MudLink OnClick="@(() => ShowRetirementDetails(retirementForFeature))" Style="cursor: pointer;" Typo="Typo.body2" Underline="Underline.Hover">
+                            @context.RetiringFeature
+                        </MudLink>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@context.RetiringFeature</MudText>
+                    }
+                </MudTd>
                 <MudTd DataLabel="Retirement Date">
                     <MudText Typo="Typo.body2" Color="@GetRetirementDateColor(context.RetirementDate)">
                         <strong>@FormatRetirementDate(context.RetirementDate)</strong>
                     </MudText>
                 </MudTd>
-                <MudTd DataLabel="Resource Group">@context.ResourceGroup</MudTd>
+                <MudTd DataLabel="Resource Group">
+                    @{
+                        var retirementForRg = GetRetirementForResource(context);
+                    }
+                    @if (retirementForRg is not null)
+                    {
+                        <MudLink Href="@GetResourceGroupUrlFromResource(context, retirementForRg)" Target="_blank" Typo="Typo.body2" Underline="Underline.Always">
+                            @context.ResourceGroup
+                        </MudLink>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2">@context.ResourceGroup</MudText>
+                    }
+                </MudTd>
                 <MudTd DataLabel="Location">@context.Location</MudTd>
             </RowTemplate>
             <NoRecordsContent>
@@ -384,6 +427,46 @@
     /// </summary>
     private static string GetAzurePortalUrl(TenantSubscription subscription) =>
         $"https://portal.azure.com/#@{subscription.TenantId}/resource/subscriptions/{subscription.SubscriptionId}/overview";
+
+    /// <summary>
+    /// Generates the Azure portal URL for a subscription from a service retirement.
+    /// </summary>
+    private static string GetSubscriptionUrl(ServiceRetirement retirement) =>
+        $"https://portal.azure.com/#@{retirement.TenantId}/resource/subscriptions/{retirement.SubscriptionId}/overview";
+
+    /// <summary>
+    /// Shows detailed information about a service retirement in a dialog.
+    /// </summary>
+    private async Task ShowRetirementDetails(ServiceRetirement retirement)
+    {
+        var parameters = new DialogParameters
+        {
+            { "Retirement", retirement }
+        };
+
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true,
+            CloseButton = true
+        };
+
+        await DialogService.ShowAsync<FinOps.Components.Dialogs.RetirementDetailsDialog>("Retirement Details", parameters, options);
+    }
+
+    /// <summary>
+    /// Finds the parent ServiceRetirement for a given RetirementResource.
+    /// </summary>
+    private ServiceRetirement? GetRetirementForResource(RetirementResource resource)
+    {
+        return _selectedRetirements.FirstOrDefault(r => r.Resources.Contains(resource));
+    }
+
+    /// <summary>
+    /// Generates the Azure portal URL for a resource group from a retirement resource.
+    /// </summary>
+    private static string GetResourceGroupUrlFromResource(RetirementResource resource, ServiceRetirement retirement) =>
+        $"https://portal.azure.com/#@{retirement.TenantId}/resource/subscriptions/{resource.SubscriptionId}/resourceGroups/{resource.ResourceGroup}/overview";
 
     private static Color GetServiceColor(string service) => service switch
     {

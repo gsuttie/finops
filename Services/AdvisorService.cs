@@ -144,7 +144,10 @@ public class AdvisorService(
                         if (properties.TryGetProperty("timeSeries", out var timeSeries) && timeSeries.ValueKind == JsonValueKind.Array)
                         {
                             var latestEntry = timeSeries.EnumerateArray().LastOrDefault();
-                            if (latestEntry.TryGetProperty("aggregatedColumns", out var columns) && columns.ValueKind == JsonValueKind.Array)
+                            // Check if latestEntry is valid (not default JsonElement)
+                            if (latestEntry.ValueKind != JsonValueKind.Undefined &&
+                                latestEntry.TryGetProperty("aggregatedColumns", out var columns) &&
+                                columns.ValueKind == JsonValueKind.Array)
                             {
                                 foreach (var column in columns.EnumerateArray())
                                 {
@@ -207,6 +210,59 @@ public class AdvisorService(
         {
             var data = rec.Data;
 
+            // Build detailed solution text from available fields
+            var solutionParts = new List<string>();
+
+            // Start with the solution from short description
+            if (!string.IsNullOrEmpty(data.ShortDescription?.Solution))
+            {
+                solutionParts.Add(data.ShortDescription.Solution);
+            }
+
+            // Add the full description which contains detailed remediation steps
+            if (!string.IsNullOrEmpty(data.Description) && data.Description != data.ShortDescription?.Problem)
+            {
+                solutionParts.Add(data.Description);
+            }
+
+            // Add label if it provides additional context
+            if (!string.IsNullOrEmpty(data.Label) &&
+                data.Label != data.ShortDescription?.Solution &&
+                data.Label != data.ShortDescription?.Problem)
+            {
+                solutionParts.Add(data.Label);
+            }
+
+            // Check for potential benefits
+            if (!string.IsNullOrEmpty(data.PotentialBenefits))
+            {
+                solutionParts.Add($"Benefits: {data.PotentialBenefits}");
+            }
+
+            // Check ExtendedProperties for additional remediation details
+            if (data.ExtendedProperties != null && data.ExtendedProperties.Count > 0)
+            {
+                foreach (var prop in data.ExtendedProperties)
+                {
+                    var key = prop.Key;
+                    var value = prop.Value?.ToString();
+
+                    if (!string.IsNullOrEmpty(value) &&
+                        (key.Contains("action", StringComparison.OrdinalIgnoreCase) ||
+                         key.Contains("remediation", StringComparison.OrdinalIgnoreCase) ||
+                         key.Contains("recommendation", StringComparison.OrdinalIgnoreCase) ||
+                         key.Contains("step", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        solutionParts.Add(value);
+                    }
+                }
+            }
+
+            // Combine all parts into a comprehensive solution
+            var solution = solutionParts.Count > 0
+                ? string.Join(" ", solutionParts.Distinct())
+                : data.ShortDescription?.Solution ?? "No detailed solution available.";
+
             results.Add(new AdvisorRecommendation
             {
                 RecommendationId = rec.Id.ToString(),
@@ -214,7 +270,7 @@ public class AdvisorService(
                 Category = data.Category?.ToString() ?? "Unknown",
                 Impact = data.Impact?.ToString() ?? "Unknown",
                 Problem = data.ShortDescription?.Problem ?? "",
-                Solution = data.ShortDescription?.Solution ?? "",
+                Solution = solution,
                 ImpactedField = data.ImpactedField ?? "",
                 ImpactedValue = data.ImpactedValue ?? "",
                 ResourceId = rec.Id.ToString(),

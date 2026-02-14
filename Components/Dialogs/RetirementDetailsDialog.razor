@@ -1,0 +1,140 @@
+@using FinOps.Models
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        @if (Retirement is not null)
+        {
+            <MudStack Spacing="3">
+                <MudPaper Class="pa-3" Elevation="0" Outlined="true">
+                    <MudStack Spacing="2">
+                        <MudText Typo="Typo.h6">@Retirement.RetiringFeature</MudText>
+                        <MudDivider />
+
+                        <MudStack Row="true" Spacing="4">
+                            <MudStack Spacing="1">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Service</MudText>
+                                <MudChip T="string" Color="@GetServiceColor(Retirement.ServiceName)" Size="Size.Small">
+                                    @Retirement.ServiceName
+                                </MudChip>
+                            </MudStack>
+
+                            <MudStack Spacing="1">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Retirement Date</MudText>
+                                <MudText Typo="Typo.body2" Color="@GetRetirementDateColor(Retirement.RetirementDate)">
+                                    <strong>@FormatRetirementDate(Retirement.RetirementDate)</strong>
+                                </MudText>
+                            </MudStack>
+
+                            <MudStack Spacing="1">
+                                <MudText Typo="Typo.caption" Color="Color.Secondary">Affected Resources</MudText>
+                                <MudChip T="string" Color="@GetResourceCountColor(Retirement.ResourceCount)" Size="Size.Small">
+                                    @Retirement.ResourceCount
+                                </MudChip>
+                            </MudStack>
+                        </MudStack>
+                    </MudStack>
+                </MudPaper>
+
+                <MudPaper Class="pa-3" Elevation="0" Outlined="true">
+                    <MudStack Spacing="2">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Primary">Description</MudText>
+                        <MudText Typo="Typo.body2">@Retirement.Description</MudText>
+                    </MudStack>
+                </MudPaper>
+
+                <MudPaper Class="pa-3" Elevation="0" Outlined="true">
+                    <MudStack Spacing="2">
+                        <MudText Typo="Typo.subtitle2" Color="Color.Primary">Subscription</MudText>
+                        <MudText Typo="Typo.body2">@Retirement.SubscriptionName</MudText>
+                        <MudText Typo="Typo.caption" Style="font-family: monospace;">@Retirement.SubscriptionId</MudText>
+                    </MudStack>
+                </MudPaper>
+
+                @if (Retirement.Resources.Count > 0)
+                {
+                    <MudPaper Class="pa-3" Elevation="0" Outlined="true">
+                        <MudStack Spacing="2">
+                            <MudText Typo="Typo.subtitle2" Color="Color.Primary">Affected Resources (@Retirement.Resources.Count)</MudText>
+                            <MudSimpleTable Dense="true" Hover="true" Bordered="true" Striped="true">
+                                <thead>
+                                    <tr>
+                                        <th>Resource Group</th>
+                                        <th>Type</th>
+                                        <th>Location</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var resource in Retirement.Resources)
+                                    {
+                                        <tr>
+                                            <td>@resource.ResourceGroup</td>
+                                            <td style="font-family: monospace; font-size: 0.85em;">@resource.ResourceType</td>
+                                            <td>@resource.Location</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudStack>
+                    </MudPaper>
+                }
+            </MudStack>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Color="Color.Primary" Variant="Variant.Filled">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public ServiceRetirement? Retirement { get; set; }
+
+    private void Close() => MudDialog?.Close();
+
+    private static Color GetServiceColor(string service) => service switch
+    {
+        "Compute" => Color.Primary,
+        "Storage" => Color.Secondary,
+        "Network" => Color.Info,
+        "Sql" or "Database" => Color.Tertiary,
+        "Web" => Color.Success,
+        "ContainerRegistry" or "ContainerService" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static Color GetResourceCountColor(int count)
+    {
+        if (count > 10)
+            return Color.Error;
+        if (count > 5)
+            return Color.Warning;
+        return Color.Info;
+    }
+
+    private static Color GetRetirementDateColor(string date)
+    {
+        if (DateTime.TryParse(date, out var retirementDate))
+        {
+            var daysUntilRetirement = (retirementDate - DateTime.UtcNow).Days;
+            if (daysUntilRetirement < 90)
+                return Color.Error;
+            if (daysUntilRetirement < 180)
+                return Color.Warning;
+            return Color.Default;
+        }
+        return Color.Default;
+    }
+
+    private static string FormatRetirementDate(string date)
+    {
+        if (DateTime.TryParse(date, out var retirementDate))
+        {
+            return retirementDate.ToString("MMMM yyyy");
+        }
+        return date;
+    }
+}
