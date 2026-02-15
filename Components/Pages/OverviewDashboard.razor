@@ -141,26 +141,13 @@
     }
 </style>
 
-<!-- Top Navigation Tabs -->
-<MudPaper Class="mb-4 pa-4" Elevation="1">
-    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => Navigation.NavigateTo("/dashboard/overview"))">
-            Overview
-        </MudButton>
-        <MudButton Variant="Variant.Text" OnClick="@(() => Navigation.NavigateTo("/costs/overview"))">
-            Subscriptions
-        </MudButton>
-    </MudStack>
-</MudPaper>
-
 <!-- Subscription Selector -->
 @if (_subscriptions.Count > 0)
 {
     <MudPaper Class="mb-4 pa-4" Elevation="1">
         <MudStack Row="true" Spacing="3" AlignItems="AlignItems.Center">
-            <MudText Typo="Typo.h6">Select Subscription:</MudText>
             <MudSelect T="TenantSubscription" Value="_selectedSubscription" ValueChanged="OnSubscriptionChanged"
-                       Label="Choose a subscription" Variant="Variant.Outlined"
+                       Label="Select Subscription" Variant="Variant.Outlined"
                        Style="min-width: 400px;"
                        ToStringFunc="@(s => s?.DisplayName ?? "Select...")">
                 @foreach (var sub in _subscriptions)
@@ -170,6 +157,9 @@
                     </MudSelectItem>
                 }
             </MudSelect>
+            <MudButton Variant="Variant.Text" OnClick="@(() => Navigation.NavigateTo("/costs/overview"))">
+                View All Subscriptions
+            </MudButton>
         </MudStack>
     </MudPaper>
 }
