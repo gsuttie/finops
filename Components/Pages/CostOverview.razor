@@ -3,6 +3,7 @@
 @using FinOps.Services
 @using FinOps.Components.Dialogs
 @using System.Globalization
+@using ApexCharts
 @inject IAzureSubscriptionService SubscriptionService
 @inject ICostAnalysisService CostAnalysisService
 @inject TenantClientManager TenantClientManager
@@ -48,8 +49,6 @@
         <MudTh>Tenant</MudTh>
         <MudTh>Name</MudTh>
         <MudTh>Subscription ID</MudTh>
-        <MudTh>Current Month Spend</MudTh>
-        <MudTh>Forecast (Month)</MudTh>
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Tenant">
@@ -59,34 +58,6 @@
         <MudTd DataLabel="Name">@context.Subscription.DisplayName</MudTd>
         <MudTd DataLabel="Subscription ID">
             <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.Subscription.SubscriptionId</MudText>
-        </MudTd>
-        <MudTd DataLabel="Current Month Spend">
-            @if (context.IsLoading)
-            {
-                <MudProgressCircular Size="MudBlazor.Size.Small" Indeterminate="true" />
-            }
-            else if (context.CurrentSpend.HasValue)
-            {
-                <MudText Typo="Typo.body2">@FormatCurrency(context.CurrentSpend.Value)</MudText>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">-</MudText>
-            }
-        </MudTd>
-        <MudTd DataLabel="Forecast (Month)">
-            @if (context.IsLoading)
-            {
-                <MudProgressCircular Size="MudBlazor.Size.Small" Indeterminate="true" />
-            }
-            else if (context.MonthForecast.HasValue)
-            {
-                <MudText Typo="Typo.body2">@FormatCurrency(context.MonthForecast.Value)</MudText>
-            }
-            else
-            {
-                <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary">-</MudText>
-            }
         </MudTd>
     </RowTemplate>
     <NoRecordsContent>
@@ -108,10 +79,126 @@
 {
     <MudPaper Class="pa-4 mt-4" Elevation="2">
         <MudText Typo="Typo.h6" Class="mb-4">
-            Selected Subscriptions (@_selectedSubscriptions.Count)
+            Cost Analysis - @_selectedSubscriptions.Count Subscription@(_selectedSubscriptions.Count > 1 ? "s" : "") Selected
         </MudText>
-        <MudText Typo="Typo.h5">Total Last 30 Days: @FormatCurrency(_totalCost)</MudText>
-        <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">Charts will be added in a future update</MudText>
+        <MudText Typo="Typo.h5" Class="mb-4">Total Last 30 Days: @FormatCurrency(_totalCost)</MudText>
+
+        @if (_loadingCharts)
+        {
+            <MudPaper Class="pa-8" Elevation="0" Style="text-align: center;">
+                <MudProgressCircular Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Large" Indeterminate="true" />
+                <MudText Typo="Typo.body1" Class="mt-4">Loading chart data...</MudText>
+            </MudPaper>
+        }
+        else if (_actualCostPoints.Count == 0 && _forecastCostPoints.Count == 0)
+        {
+            <MudPaper Class="pa-8" Elevation="0" Style="text-align: center;">
+                <MudText Typo="Typo.body1" Color="MudBlazor.Color.Secondary">
+                    No cost data available for the selected period
+                </MudText>
+            </MudPaper>
+        }
+        else
+        {
+            <!-- Top Row: Service Breakdown (left) + Daily Trend (right) -->
+            <MudGrid Spacing="3">
+                <!-- Service Breakdown Donut Chart -->
+                @if (_serviceBreakdown.Count > 0)
+                {
+                    <MudItem xs="12" md="4">
+                        <MudPaper Class="pa-4" Elevation="1">
+                            <MudText Typo="Typo.h6" Class="mb-3">Top Services</MudText>
+                            <ApexChart TItem="CostBreakdownItem"
+                                       Title="Cost by Service"
+                                       Options="@_donutChartOptions">
+                                <ApexPointSeries TItem="CostBreakdownItem"
+                                                 Items="_serviceBreakdown"
+                                                 Name="Cost"
+                                                 SeriesType="SeriesType.Donut"
+                                                 XValue="@(e => e.Name)"
+                                                 YAggregate="@(e => e.Sum(x => x.Cost))" />
+                            </ApexChart>
+                        </MudPaper>
+                    </MudItem>
+                }
+
+                <!-- Daily Cost Trend with Forecast -->
+                <MudItem xs="12" md="@(_serviceBreakdown.Count > 0 ? 8 : 12)">
+                    <MudPaper Class="pa-4" Elevation="1">
+                        <MudText Typo="Typo.h6" Class="mb-3">Daily Cost Trend</MudText>
+                        <ApexChart TItem="ChartDataPoint"
+                                   Title="30-Day Cost Trend"
+                                   Options="@_trendChartOptions"
+                                   Height="350">
+                            <ApexPointSeries TItem="ChartDataPoint"
+                                             Items="_actualCostPoints"
+                                             Name="Actual Cost"
+                                             SeriesType="SeriesType.Area"
+                                             XValue="@(e => e.Date)"
+                                             YAggregate="@(e => e.Sum(x => x.Value))"
+                                             OrderBy="e => e.X" />
+                            @if (_forecastCostPoints.Count > 0)
+                            {
+                                <ApexPointSeries TItem="ChartDataPoint"
+                                                 Items="_forecastCostPoints"
+                                                 Name="Forecast"
+                                                 SeriesType="SeriesType.Line"
+                                                 XValue="@(e => e.Date)"
+                                                 YAggregate="@(e => e.Sum(x => x.Value))"
+                                                 OrderBy="e => e.X" />
+                            }
+                        </ApexChart>
+                    </MudPaper>
+                </MudItem>
+
+                <!-- Resource Group Breakdown Bar Chart -->
+                @if (_resourceGroupBreakdown.Count > 0)
+                {
+                    <MudItem xs="12">
+                        <MudPaper Class="pa-4" Elevation="1">
+                            <MudText Typo="Typo.h6" Class="mb-3">Top Resource Groups</MudText>
+                            <ApexChart TItem="CostBreakdownItem"
+                                       Title="Cost by Resource Group"
+                                       Options="@_barChartOptions"
+                                       Height="300">
+                                <ApexPointSeries TItem="CostBreakdownItem"
+                                                 Items="_resourceGroupBreakdown"
+                                                 Name="Cost"
+                                                 SeriesType="SeriesType.Bar"
+                                                 XValue="@(e => e.Name)"
+                                                 YAggregate="@(e => e.Sum(x => x.Cost))"
+                                                 OrderByDescending="e => e.Y" />
+                            </ApexChart>
+                        </MudPaper>
+                    </MudItem>
+                }
+
+                <!-- Multi-Subscription Comparison (only if multiple subscriptions selected) -->
+                @if (_selectedSubscriptions.Count > 1 && _subscriptionDailyCosts.Count > 1)
+                {
+                    <MudItem xs="12">
+                        <MudPaper Class="pa-4" Elevation="1">
+                            <MudText Typo="Typo.h6" Class="mb-3">Multi-Subscription Comparison</MudText>
+                            <ApexChart TItem="CostDataPoint"
+                                       Title="Daily Costs by Subscription"
+                                       Options="@_stackedBarChartOptions"
+                                       Height="350">
+                                @foreach (var kvp in _subscriptionDailyCosts)
+                                {
+                                    <ApexPointSeries TItem="CostDataPoint"
+                                                     Items="kvp.Value"
+                                                     Name="@kvp.Key"
+                                                     SeriesType="SeriesType.Bar"
+                                                     XValue="@(e => e.Date)"
+                                                     YAggregate="@(e => e.Sum(x => x.Cost))"
+                                                     OrderBy="e => e.X" />
+                                }
+                            </ApexChart>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        }
     </MudPaper>
 }
 
@@ -126,6 +213,21 @@
     private string? _homeTenantDisplayName;
     private decimal _totalCost = 0m;
 
+    // Chart data fields
+    private bool _loadingCharts = false;
+    private List<ChartDataPoint> _actualCostPoints = new();
+    private List<ChartDataPoint> _forecastCostPoints = new();
+    private List<CostBreakdownItem> _serviceBreakdown = new();
+    private List<CostBreakdownItem> _resourceGroupBreakdown = new();
+    private Dictionary<string, List<CostDataPoint>> _subscriptionDailyCosts = new();
+    private DateTime _thirtyDaysAgo;
+
+    // Chart options
+    private ApexChartOptions<ChartDataPoint> _trendChartOptions = new();
+    private ApexChartOptions<CostBreakdownItem> _donutChartOptions = new();
+    private ApexChartOptions<CostBreakdownItem> _barChartOptions = new();
+    private ApexChartOptions<CostDataPoint> _stackedBarChartOptions = new();
+
     private IEnumerable<SubscriptionCostInfo> _filteredSubscriptions =>
         string.IsNullOrWhiteSpace(_searchText)
             ? _subscriptionCostInfo
@@ -138,7 +240,114 @@
     protected override async Task OnInitializedAsync()
     {
         (_homeTenantId, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        InitializeChartOptions();
         await LoadSubscriptions();
+    }
+
+    private void InitializeChartOptions()
+    {
+        // Trend chart options (Area + Line combination)
+        _trendChartOptions = new ApexChartOptions<ChartDataPoint>
+        {
+            Theme = new Theme { Mode = Mode.Light },
+            Chart = new Chart
+            {
+                Toolbar = new Toolbar { Show = true },
+                Zoom = new Zoom { Enabled = true }
+            },
+            Stroke = new Stroke { Curve = Curve.Smooth, Width = 2 },
+            Xaxis = new XAxis
+            {
+                Type = XAxisType.Datetime,
+                Labels = new XAxisLabels { Format = "dd MMM" }
+            },
+            Yaxis = new List<YAxis>
+            {
+                new YAxis
+                {
+                    Labels = new YAxisLabels
+                    {
+                        Formatter = "function(val) { return '$' + val.toFixed(2); }"
+                    }
+                }
+            },
+            Colors = new List<string> { "#2196F3", "#FF9800" },
+            Legend = new Legend { Position = LegendPosition.Top }
+        };
+
+        // Donut chart options
+        _donutChartOptions = new ApexChartOptions<CostBreakdownItem>
+        {
+            Theme = new Theme { Mode = Mode.Light },
+            Chart = new Chart { Height = 350 },
+            Legend = new Legend { Position = LegendPosition.Bottom },
+            DataLabels = new DataLabels
+            {
+                Enabled = true,
+                Formatter = "function(val) { return val.toFixed(1) + '%'; }"
+            }
+        };
+
+        // Horizontal bar chart options
+        _barChartOptions = new ApexChartOptions<CostBreakdownItem>
+        {
+            Theme = new Theme { Mode = Mode.Light },
+            Chart = new Chart { Height = 300 },
+            PlotOptions = new PlotOptions
+            {
+                Bar = new PlotOptionsBar
+                {
+                    Horizontal = true
+                }
+            },
+            DataLabels = new DataLabels
+            {
+                Enabled = true,
+                Formatter = "function(val) { return '$' + val.toFixed(2); }"
+            },
+            Xaxis = new XAxis
+            {
+                Labels = new XAxisLabels
+                {
+                    Formatter = "function(val) { return '$' + val.toFixed(2); }"
+                }
+            },
+            Colors = new List<string> { "#4CAF50" }
+        };
+
+        // Stacked bar chart options
+        _stackedBarChartOptions = new ApexChartOptions<CostDataPoint>
+        {
+            Theme = new Theme { Mode = Mode.Light },
+            Chart = new Chart
+            {
+                Stacked = true,
+                Toolbar = new Toolbar { Show = true }
+            },
+            PlotOptions = new PlotOptions
+            {
+                Bar = new PlotOptionsBar
+                {
+                    Horizontal = false
+                }
+            },
+            Xaxis = new XAxis
+            {
+                Type = XAxisType.Datetime,
+                Labels = new XAxisLabels { Format = "dd MMM" }
+            },
+            Yaxis = new List<YAxis>
+            {
+                new YAxis
+                {
+                    Labels = new YAxisLabels
+                    {
+                        Formatter = "function(val) { return '$' + val.toFixed(2); }"
+                    }
+                }
+            },
+            Legend = new Legend { Position = LegendPosition.Top }
+        };
     }
 
     private async Task LoadSubscriptions()
@@ -152,13 +361,8 @@
             _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
             _subscriptionCostInfo = _subscriptions.Select(s => new SubscriptionCostInfo
             {
-                Subscription = s,
-                IsLoading = true
+                Subscription = s
             }).ToList();
-            StateHasChanged();
-
-            // Load costs for each subscription in parallel
-            await LoadCostsForAllSubscriptions();
         }
         catch (Exception ex)
         {
@@ -170,54 +374,11 @@
         }
     }
 
-    private async Task LoadCostsForAllSubscriptions()
-    {
-        var now = DateTime.UtcNow;
-        var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
-
-        var tasks = _subscriptionCostInfo.Select(async info =>
-        {
-            try
-            {
-                var currentSpendTask = CostAnalysisService.GetCostsAsync(
-                    info.Subscription.SubscriptionId,
-                    info.Subscription.TenantId,
-                    monthStart,
-                    now);
-
-                var forecastTask = CostAnalysisService.GetCostForecastAsync(
-                    info.Subscription.SubscriptionId,
-                    info.Subscription.TenantId,
-                    now,
-                    monthEnd);
-
-                await Task.WhenAll(currentSpendTask, forecastTask);
-
-                var currentSpendResult = await currentSpendTask;
-                var forecastResult = await forecastTask;
-
-                info.CurrentSpend = currentSpendResult.TotalCost;
-                info.MonthForecast = forecastResult.TotalForecast;
-                info.IsLoading = false;
-                StateHasChanged();
-            }
-            catch
-            {
-                info.IsLoading = false;
-                info.CurrentSpend = null;
-                info.MonthForecast = null;
-                StateHasChanged();
-            }
-        });
-
-        await Task.WhenAll(tasks);
-    }
-
     private async Task OnSelectedSubscriptionsChanged(HashSet<SubscriptionCostInfo> selected)
     {
         _selectedSubscriptions = selected;
         await CalculateTotalCost();
+        await LoadChartDataAsync();
     }
 
     private async Task CalculateTotalCost()
@@ -285,11 +446,166 @@
         return amount.ToString("C2", CultureInfo.CreateSpecificCulture("en-US"));
     }
 
+    private async Task LoadChartDataAsync()
+    {
+        if (_selectedSubscriptions.Count == 0)
+        {
+            _actualCostPoints.Clear();
+            _forecastCostPoints.Clear();
+            _serviceBreakdown.Clear();
+            _resourceGroupBreakdown.Clear();
+            _subscriptionDailyCosts.Clear();
+            return;
+        }
+
+        _loadingCharts = true;
+        StateHasChanged();
+
+        try
+        {
+            var now = DateTime.UtcNow;
+            _thirtyDaysAgo = now.AddDays(-30);
+
+            // Batch 1: Get costs for all selected subscriptions (parallel)
+            var costTasks = _selectedSubscriptions.Select(async info =>
+            {
+                try
+                {
+                    var result = await CostAnalysisService.GetCostsAsync(
+                        info.Subscription.SubscriptionId,
+                        info.Subscription.TenantId,
+                        _thirtyDaysAgo,
+                        now);
+                    return (info.Subscription.SubscriptionId, info.Subscription.DisplayName, (CostQueryResult?)result);
+                }
+                catch
+                {
+                    return (info.Subscription.SubscriptionId, info.Subscription.DisplayName, (CostQueryResult?)null);
+                }
+            }).ToList();
+
+            var costResults = await Task.WhenAll(costTasks);
+
+            // Aggregate costs by date for trend chart
+            var dailyCostsDict = new Dictionary<DateTime, decimal>();
+            _subscriptionDailyCosts.Clear();
+
+            foreach (var (subId, subName, result) in costResults)
+            {
+                if (result != null)
+                {
+                    // Store per-subscription data for multi-subscription comparison
+                    _subscriptionDailyCosts[subName] = result.Data.ToList();
+
+                    // Aggregate across all subscriptions
+                    foreach (var point in result.Data)
+                    {
+                        if (dailyCostsDict.ContainsKey(point.Date))
+                            dailyCostsDict[point.Date] += point.Cost;
+                        else
+                            dailyCostsDict[point.Date] = point.Cost;
+                    }
+                }
+            }
+
+            _actualCostPoints = dailyCostsDict
+                .OrderBy(kvp => kvp.Key)
+                .Select(kvp => new ChartDataPoint { Date = kvp.Key, Value = kvp.Value })
+                .ToList();
+
+            // Small delay to avoid rate limiting
+            await Task.Delay(800);
+
+            // Batch 2: Get forecast for first subscription
+            if (_selectedSubscriptions.Count > 0)
+            {
+                var firstSub = _selectedSubscriptions.First();
+                try
+                {
+                    var monthEnd = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc)
+                        .AddMonths(1).AddDays(-1);
+                    var forecastResult = await CostAnalysisService.GetCostForecastAsync(
+                        firstSub.Subscription.SubscriptionId,
+                        firstSub.Subscription.TenantId,
+                        now,
+                        monthEnd);
+
+                    _forecastCostPoints = forecastResult.Data
+                        .Where(p => p.ForecastedCost.HasValue)
+                        .Select(p => new ChartDataPoint { Date = p.Date, Value = p.ForecastedCost!.Value })
+                        .ToList();
+                }
+                catch
+                {
+                    _forecastCostPoints.Clear();
+                }
+            }
+
+            // Small delay to avoid rate limiting
+            await Task.Delay(800);
+
+            // Batch 3: Get service breakdown for first subscription
+            if (_selectedSubscriptions.Count > 0)
+            {
+                var firstSub = _selectedSubscriptions.First();
+                try
+                {
+                    _serviceBreakdown = (await CostAnalysisService.GetCostsByDimensionAsync(
+                        firstSub.Subscription.SubscriptionId,
+                        firstSub.Subscription.TenantId,
+                        _thirtyDaysAgo,
+                        now,
+                        "ServiceName",
+                        8)).ToList();
+                }
+                catch
+                {
+                    _serviceBreakdown.Clear();
+                }
+            }
+
+            // Small delay to avoid rate limiting
+            await Task.Delay(800);
+
+            // Batch 4: Get resource group breakdown for first subscription
+            if (_selectedSubscriptions.Count > 0)
+            {
+                var firstSub = _selectedSubscriptions.First();
+                try
+                {
+                    _resourceGroupBreakdown = (await CostAnalysisService.GetCostsByDimensionAsync(
+                        firstSub.Subscription.SubscriptionId,
+                        firstSub.Subscription.TenantId,
+                        _thirtyDaysAgo,
+                        now,
+                        "ResourceGroup",
+                        10)).ToList();
+                }
+                catch
+                {
+                    _resourceGroupBreakdown.Clear();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load chart data: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loadingCharts = false;
+            StateHasChanged();
+        }
+    }
+
+    private class ChartDataPoint
+    {
+        public DateTime Date { get; set; }
+        public decimal Value { get; set; }
+    }
+
     private class SubscriptionCostInfo
     {
         public required TenantSubscription Subscription { get; init; }
-        public decimal? CurrentSpend { get; set; }
-        public decimal? MonthForecast { get; set; }
-        public bool IsLoading { get; set; }
     }
 }
