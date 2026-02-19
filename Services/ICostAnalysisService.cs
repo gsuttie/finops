@@ -34,6 +34,17 @@ public interface ICostAnalysisService
         DateTime endDate);
 
     /// <summary>
+    /// Gets cost breakdown by a specific tag key (grouped by tag values)
+    /// </summary>
+    Task<IReadOnlyList<CostBreakdownItem>> GetCostsByTagKeyAsync(
+        string subscriptionId,
+        string tenantId,
+        DateTime startDate,
+        DateTime endDate,
+        string tagKey,
+        int topN = 50);
+
+    /// <summary>
     /// Gets comprehensive dashboard data with parallel queries
     /// </summary>
     Task<CostDashboardData> GetDashboardDataAsync(

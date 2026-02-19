@@ -1,0 +1,400 @@
+@page "/maturity"
+@using FinOps.Models
+@using FinOps.Services
+@inject IAzureSubscriptionService SubscriptionService
+@inject IMaturityService MaturityService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject NavigationManager NavigationManager
+
+<PageTitle>Maturity Score</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">FinOps Maturity Score</MudText>
+
+@* Tenant connection bar *@
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadSubscriptions">
+            Refresh
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+@* Subscription selection table *@
+<MudTable T="TenantSubscription" Items="@_filteredSubscriptions" MultiSelection="true"
+          SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSelectedSubscriptionsChanged"
+          Loading="@_loadingSubscriptions" Hover="true" Dense="true" Elevation="2">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Subscriptions</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_subSearchText" Placeholder="Search subscriptions..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.Insights"
+                   OnClick="@ScoreSelected">
+            Score Selected (@_selectedSubscriptions.Count)
+        </MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
+            <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.TenantId</MudText>
+        </MudTd>
+        <MudTd DataLabel="Name">
+            <MudLink Href="@GetAzurePortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                @context.DisplayName
+            </MudLink>
+        </MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudLink Href="@GetAzurePortalUrl(context)" Target="_blank" Typo="Typo.body2" Style="font-family: monospace;">
+                @context.SubscriptionId
+            </MudLink>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        @if (_loadError is not null)
+        {
+            <MudText Color="Color.Error">@_loadError</MudText>
+        }
+        else
+        {
+            <MudText>No subscriptions found.</MudText>
+        }
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@* Scoring progress *@
+@if (_scoring)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+    <MudText Typo="Typo.body2" Class="mt-2" Align="Align.Center">
+        Scoring @_scoringProgress of @_selectedSubscriptions.Count subscriptions...
+    </MudText>
+}
+
+@if (_scoredOnce && !_scoring && _scores.Count > 0)
+{
+    @* Summary strip *@
+    <MudPaper Class="pa-4 mb-4 mt-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                Tags: @(_scores.Average(s => s.TagCoverageScore).ToString("F0"))%
+            </MudChip>
+            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                Budget: @(_scores.Average(s => s.BudgetCoverageScore).ToString("F0"))%
+            </MudChip>
+            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                Waste: @(_scores.Average(s => s.WasteScore).ToString("F0"))%
+            </MudChip>
+            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                Reservations: @(_scores.Average(s => s.ReservationCoverageScore).ToString("F0"))%
+            </MudChip>
+            <MudDivider Vertical="true" FlexItem="true" />
+            @{
+                var avgOverall = _scores.Average(s => s.OverallScore);
+            }
+            <MudChip T="string" Size="Size.Small" Color="@GetTierColor(avgOverall)" Variant="Variant.Filled">
+                Overall: @avgOverall.ToString("F0")/100
+            </MudChip>
+        </MudStack>
+    </MudPaper>
+
+    @* Results table *@
+    <MudTable T="SubscriptionMaturityScore" Items="_scores" Dense="true" Hover="true" Elevation="2"
+              OnRowClick="OnScoreRowClick"
+              RowClassFunc="@((row, _) => row == _selectedScore ? "mud-selected-item" : "")">
+        <HeaderContent>
+            <MudTh>Subscription</MudTh>
+            <MudTh>Overall</MudTh>
+            <MudTh>Tag Coverage</MudTh>
+            <MudTh>Budget</MudTh>
+            <MudTh>Waste %</MudTh>
+            <MudTh>Reservations</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Subscription">
+                <MudText Typo="Typo.body2"><strong>@context.Subscription.DisplayName</strong></MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Subscription.TenantDisplayName</MudText>
+            </MudTd>
+            <MudTd DataLabel="Overall">
+                <MudChip T="string" Color="@GetTierColor(context.OverallScore)" Size="Size.Small">
+                    @context.OverallScore.ToString("F0") — @context.Tier
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Tag Coverage">
+                @if (context.TagCoverageError is not null)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Error">Error</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">@context.TagCoverageScore.ToString("F0")%</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.TagCoverageDisplay</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Budget">
+                @if (context.BudgetCoverageError is not null)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Error">Error</MudText>
+                }
+                else
+                {
+                    <MudChip T="string" Color="@(context.HasBudget ? Color.Success : Color.Error)" Size="Size.Small">
+                        @context.BudgetDisplay
+                    </MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Waste %">
+                @if (context.WasteScoreError is not null)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Error">Error</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">@context.IdleWastePercent.ToString("F1")%</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.WasteDisplay</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Reservations">
+                @if (context.ReservationCoverageError is not null)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Error">Error</MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">@context.ReservationCoverageScore.ToString("F0")%</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.ReservationDisplay</MudText>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+
+    @* Improvement roadmap *@
+    @if (_selectedScore is not null)
+    {
+        <MudPaper Class="pa-4 mt-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">
+                Improvement Roadmap: @_selectedScore.Subscription.DisplayName
+            </MudText>
+
+            @if (_selectedScore.Improvements.Count == 0)
+            {
+                <MudAlert Severity="Severity.Success">
+                    Excellent FinOps maturity — no improvements needed!
+                </MudAlert>
+            }
+            else
+            {
+                @foreach (var item in _selectedScore.Improvements.OrderBy(i => i.Priority))
+                {
+                    <MudPaper Outlined="true" Class="pa-3 mb-2">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@GetPriorityIcon(item.Priority)" Color="@GetPriorityColor(item.Priority)" />
+                            <MudChip T="string" Size="Size.Small" Color="@GetPriorityColor(item.Priority)">@item.Priority</MudChip>
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">@item.Category</MudChip>
+                            <MudStack Spacing="0">
+                                <MudText Typo="Typo.body1"><b>@item.Title</b></MudText>
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">@item.Description</MudText>
+                            </MudStack>
+                            <MudSpacer />
+                            @if (item.ActionLink is not null)
+                            {
+                                <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Primary"
+                                           OnClick="@(() => NavigationManager.NavigateTo(item.ActionLink))">
+                                    Go →
+                                </MudButton>
+                            }
+                        </MudStack>
+                    </MudPaper>
+                }
+            }
+        </MudPaper>
+    }
+}
+
+@code {
+    private List<TenantSubscription> _allSubscriptions = [];
+    private HashSet<TenantSubscription> _selectedSubscriptions = [];
+    private List<SubscriptionMaturityScore> _scores = [];
+    private SubscriptionMaturityScore? _selectedScore;
+    private bool _loadingSubscriptions = true;
+    private bool _scoring;
+    private bool _scoredOnce;
+    private int _scoringProgress;
+    private string? _loadError;
+    private string _subSearchText = string.Empty;
+    private string? _homeTenantDisplayName;
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_subSearchText)
+            ? _allSubscriptions
+            : _allSubscriptions.Where(s =>
+                s.DisplayName.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.TenantId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loadingSubscriptions = true;
+        _loadError = null;
+        _selectedSubscriptions.Clear();
+        StateHasChanged();
+
+        try
+        {
+            _allSubscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load subscriptions: {ex.Message}";
+        }
+        finally
+        {
+            _loadingSubscriptions = false;
+        }
+    }
+
+    private void OnSelectedSubscriptionsChanged(HashSet<TenantSubscription> selected)
+    {
+        _selectedSubscriptions = selected;
+    }
+
+    private async Task ScoreSelected()
+    {
+        if (_selectedSubscriptions.Count == 0)
+        {
+            Snackbar.Add("Please select at least one subscription.", Severity.Warning);
+            return;
+        }
+
+        _scoring = true;
+        _scoredOnce = false;
+        _scoringProgress = 0;
+        _scores.Clear();
+        _selectedScore = null;
+        StateHasChanged();
+
+        try
+        {
+            var progress = new Progress<int>(count =>
+            {
+                _scoringProgress = count;
+                InvokeAsync(StateHasChanged);
+            });
+
+            var results = await MaturityService.ScoreSubscriptionsAsync(_selectedSubscriptions, progress);
+            _scores = results.OrderByDescending(s => s.OverallScore).ToList();
+            _scoredOnce = true;
+            Snackbar.Add($"Scored {_scores.Count} subscription(s).", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Scoring failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _scoring = false;
+            StateHasChanged();
+        }
+    }
+
+    private void OnScoreRowClick(TableRowClickEventArgs<SubscriptionMaturityScore> args)
+    {
+        _selectedScore = _selectedScore == args.Item ? null : args.Item;
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect Tenant", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+
+    private static Color GetTierColor(decimal score) => score switch
+    {
+        >= 80 => Color.Success,
+        >= 60 => Color.Info,
+        >= 40 => Color.Warning,
+        _ => Color.Error
+    };
+
+    private static Color GetPriorityColor(ImprovementPriority priority) => priority switch
+    {
+        ImprovementPriority.High => Color.Error,
+        ImprovementPriority.Medium => Color.Warning,
+        ImprovementPriority.Low => Color.Info,
+        _ => Color.Default
+    };
+
+    private static string GetPriorityIcon(ImprovementPriority priority) => priority switch
+    {
+        ImprovementPriority.High => Icons.Material.Filled.PriorityHigh,
+        ImprovementPriority.Medium => Icons.Material.Filled.ReportProblem,
+        ImprovementPriority.Low => Icons.Material.Filled.Info,
+        _ => Icons.Material.Filled.Circle
+    };
+
+    private static Color GetStateColor(string? state) => state switch
+    {
+        "Enabled" => Color.Success,
+        "Disabled" => Color.Error,
+        "Warned" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static string GetAzurePortalUrl(TenantSubscription subscription) =>
+        $"https://portal.azure.com/#@{subscription.TenantId}/resource/subscriptions/{subscription.SubscriptionId}/overview";
+}

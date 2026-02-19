@@ -1,0 +1,392 @@
+@page "/tagging/costs"
+@using FinOps.Models
+@using FinOps.Services
+@using System.Globalization
+@inject IAzureSubscriptionService SubscriptionService
+@inject IResourceTaggingService TaggingService
+@inject ICostAnalysisService CostAnalysisService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Costs by Tagging</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Costs by Tagging</MudText>
+
+@* Tenant connection bar *@
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+@* Controls bar *@
+<MudPaper Class="pa-4 mb-4" Elevation="2">
+    <MudGrid Spacing="3">
+        <MudItem xs="12" sm="5">
+            <MudSelect T="TenantSubscription" Label="Subscription" @bind-Value="_selectedSubscription"
+                       Variant="Variant.Outlined" Dense="true"
+                       Disabled="@_loadingSubscriptions"
+                       ToStringFunc="@(s => s == null ? "" : $"{s.DisplayName} ({s.SubscriptionId})")">
+                @foreach (var sub in _allSubscriptions)
+                {
+                    <MudSelectItem T="TenantSubscription" Value="@sub">
+                        @sub.DisplayName
+                        <MudText Typo="Typo.caption" Style="font-family: monospace; display: block;">@sub.TenantDisplayName</MudText>
+                    </MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudSelect T="string" Label="Period" @bind-Value="_period" Variant="Variant.Outlined" Dense="true">
+                <MudSelectItem T="string" Value=@("thismonth")>This Month</MudSelectItem>
+                <MudSelectItem T="string" Value=@("last30")>Last 30 Days</MudSelectItem>
+                <MudSelectItem T="string" Value=@("last3months")>Last 3 Months</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                       StartIcon="@Icons.Material.Filled.Label"
+                       OnClick="@LoadTags"
+                       Disabled="@(_selectedSubscription == null || _loadingTags)">
+                @if (_loadingTags)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                    <span>Loading Tags...</span>
+                }
+                else
+                {
+                    <span>Load Tags</span>
+                }
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+    @if (_loadError is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mt-3">@_loadError</MudAlert>
+    }
+</MudPaper>
+
+@* Tag checkboxes *@
+@if (_tagsLoaded)
+{
+    <MudPaper Class="pa-4 mb-4" Elevation="2">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+            <MudText Typo="Typo.h6">
+                Available Tags
+                <MudChip T="string" Size="Size.Small" Color="Color.Info" Class="ml-2">@_allTagKeys.Count</MudChip>
+            </MudText>
+            <MudSpacer />
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Primary" OnClick="@SelectAllTags">Select All</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Default" OnClick="@ClearAllTags">Clear All</MudButton>
+        </MudStack>
+
+        @if (_allTagKeys.Count == 0)
+        {
+            <MudAlert Severity="Severity.Info">No tags found on resource groups in this subscription.</MudAlert>
+        }
+        else
+        {
+            <MudGrid Spacing="2">
+                @foreach (var tagKey in _allTagKeys)
+                {
+                    var key = tagKey;
+                    var count = _tagRgCounts.TryGetValue(key, out var c) ? c : 0;
+                    <MudItem xs="12" sm="6" md="4" lg="3">
+                        <MudCheckBox T="bool" @bind-Value="@_checkedTags[key]" Color="Color.Primary">
+                            <MudText Typo="Typo.body2">
+                                @key
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="display: inline;"> (@count RG@(count == 1 ? "" : "s"))</MudText>
+                            </MudText>
+                        </MudCheckBox>
+                    </MudItem>
+                }
+            </MudGrid>
+
+            <MudStack Row="true" Class="mt-4">
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary"
+                           StartIcon="@Icons.Material.Filled.BarChart"
+                           OnClick="@AnalyseCosts"
+                           Disabled="@(!_checkedTags.Any(kv => kv.Value) || _analysingCosts)">
+                    @if (_analysingCosts)
+                    {
+                        <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                        <span>Querying costs for @_checkedTags.Count(kv => kv.Value) tags...</span>
+                    }
+                    else
+                    {
+                        <span>Analyse Costs</span>
+                    }
+                </MudButton>
+            </MudStack>
+        }
+    </MudPaper>
+}
+
+@* Results *@
+@if (_resultsReady)
+{
+    var checkedKeys = _checkedTags.Where(kv => kv.Value).Select(kv => kv.Key).ToList();
+
+    @if (checkedKeys.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info">Check one or more tags and click Analyse Costs.</MudAlert>
+    }
+    else
+    {
+        <MudText Typo="Typo.h5" Class="mb-4">Cost Results by Tag</MudText>
+
+        @foreach (var tagKey in checkedKeys)
+        {
+            var items = _tagCosts.TryGetValue(tagKey, out var data) ? data : [];
+            var total = GetTagTotal(tagKey);
+            var currency = items.FirstOrDefault()?.Currency ?? "USD";
+
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-3">
+                    <MudIcon Icon="@Icons.Material.Filled.Label" Color="Color.Info" Class="mr-2" />
+                    <MudText Typo="Typo.h6">@tagKey</MudText>
+                    <MudSpacer />
+                    <MudText Typo="Typo.h6" Color="Color.Primary">@FormatCurrency(total, currency)</MudText>
+                </MudStack>
+
+                @if (items.Count == 0)
+                {
+                    <MudAlert Severity="Severity.Info">No cost data for '@tagKey' in the selected period.</MudAlert>
+                }
+                else
+                {
+                    <MudTable T="CostBreakdownItem" Items="@items" Dense="true" Hover="true" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>Tag Value</MudTh>
+                            <MudTh Style="text-align: right;">Cost</MudTh>
+                            <MudTh Style="text-align: right;">Share</MudTh>
+                            <MudTh Style="min-width: 150px;">Distribution</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="Tag Value">
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info">@context.Name</MudChip>
+                            </MudTd>
+                            <MudTd DataLabel="Cost" Style="text-align: right;">
+                                <MudText Typo="Typo.body2">@FormatCurrency(context.Cost, context.Currency)</MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Share" Style="text-align: right;">
+                                <MudText Typo="Typo.body2">@context.Percentage.ToString("F1")%</MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Distribution">
+                                <MudProgressLinear Value="@((double)context.Percentage)" Color="Color.Info"
+                                                   Rounded="true" Size="Size.Medium" />
+                            </MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        }
+    }
+}
+else if (_tagsLoaded && !_analysingCosts)
+{
+    <MudAlert Severity="Severity.Info">Check one or more tags above and click Analyse Costs to see cost breakdowns.</MudAlert>
+}
+
+@code {
+    private List<TenantSubscription> _allSubscriptions = [];
+    private TenantSubscription? _selectedSubscription;
+    private bool _loadingSubscriptions = true;
+    private bool _loadingTags;
+    private bool _analysingCosts;
+    private string? _loadError;
+    private string? _homeTenantDisplayName;
+
+    private List<string> _allTagKeys = [];
+    private Dictionary<string, int> _tagRgCounts = new();
+    private Dictionary<string, bool> _checkedTags = new();
+    private Dictionary<string, List<CostBreakdownItem>> _tagCosts = new();
+
+    private bool _tagsLoaded;
+    private bool _resultsReady;
+    private string _period = "thismonth";
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loadingSubscriptions = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            _allSubscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load subscriptions: {ex.Message}";
+        }
+        finally
+        {
+            _loadingSubscriptions = false;
+        }
+    }
+
+    private async Task LoadTags()
+    {
+        if (_selectedSubscription == null) return;
+
+        _loadingTags = true;
+        _loadError = null;
+        _tagsLoaded = false;
+        _resultsReady = false;
+        _allTagKeys.Clear();
+        _tagRgCounts.Clear();
+        _checkedTags.Clear();
+        _tagCosts.Clear();
+        StateHasChanged();
+
+        try
+        {
+            var rgs = await TaggingService.GetResourceGroupsAsync(_selectedSubscription);
+
+            var keyCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var rg in rgs)
+            {
+                foreach (var key in rg.Tags.Keys)
+                {
+                    keyCounts[key] = keyCounts.TryGetValue(key, out var n) ? n + 1 : 1;
+                }
+            }
+
+            _allTagKeys = keyCounts.Keys.OrderBy(k => k).ToList();
+            _tagRgCounts = keyCounts.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+            _checkedTags = _allTagKeys.ToDictionary(k => k, _ => false);
+            _tagsLoaded = true;
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load tags: {ex.Message}";
+        }
+        finally
+        {
+            _loadingTags = false;
+        }
+    }
+
+    private async Task AnalyseCosts()
+    {
+        if (_selectedSubscription == null) return;
+
+        var keysToQuery = _checkedTags.Where(kv => kv.Value).Select(kv => kv.Key).ToList();
+        if (keysToQuery.Count == 0) return;
+
+        _analysingCosts = true;
+        _resultsReady = false;
+        _tagCosts.Clear();
+        StateHasChanged();
+
+        try
+        {
+            var (start, end) = GetDateRange();
+
+            foreach (var tagKey in keysToQuery)
+            {
+                try
+                {
+                    var items = await CostAnalysisService.GetCostsByTagKeyAsync(
+                        _selectedSubscription.SubscriptionId,
+                        _selectedSubscription.TenantId,
+                        start,
+                        end,
+                        tagKey);
+                    _tagCosts[tagKey] = items.ToList();
+                }
+                catch
+                {
+                    _tagCosts[tagKey] = [];
+                }
+
+                // Small delay to avoid rate limiting
+                if (keysToQuery.IndexOf(tagKey) < keysToQuery.Count - 1)
+                    await Task.Delay(300);
+            }
+
+            _resultsReady = true;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to analyse costs: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _analysingCosts = false;
+        }
+    }
+
+    private (DateTime start, DateTime end) GetDateRange()
+    {
+        var now = DateTime.UtcNow;
+        return _period switch
+        {
+            "thismonth" => (new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc), now),
+            "last30" => (now.AddDays(-30), now),
+            "last3months" => (now.AddDays(-90), now),
+            _ => (new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc), now)
+        };
+    }
+
+    private void SelectAllTags()
+    {
+        foreach (var key in _allTagKeys)
+            _checkedTags[key] = true;
+    }
+
+    private void ClearAllTags()
+    {
+        foreach (var key in _allTagKeys)
+            _checkedTags[key] = false;
+    }
+
+    private decimal GetTagTotal(string tagKey) =>
+        _tagCosts.TryGetValue(tagKey, out var items) ? items.Sum(i => i.Cost) : 0m;
+
+    private static string FormatCurrency(decimal amount, string currency = "USD") =>
+        amount.ToString("C2", CultureInfo.CreateSpecificCulture("en-US"));
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect Tenant", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+}

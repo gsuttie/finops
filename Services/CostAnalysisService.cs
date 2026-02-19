@@ -125,6 +125,47 @@ public class CostAnalysisService(
         });
     }
 
+    public async Task<IReadOnlyList<CostBreakdownItem>> GetCostsByTagKeyAsync(
+        string subscriptionId,
+        string tenantId,
+        DateTime startDate,
+        DateTime endDate,
+        string tagKey,
+        int topN = 50)
+    {
+        return await ExecuteWithRetryAsync(async () =>
+        {
+            var client = tenantClientManager.GetClientForTenant(tenantId);
+            var scope = SubscriptionResource.CreateResourceIdentifier(subscriptionId);
+
+            var dataset = new QueryDataset()
+            {
+                Granularity = null,
+                Aggregation =
+                {
+                    ["totalCost"] = new QueryAggregation("PreTaxCost", FunctionType.Sum)
+                },
+                Grouping =
+                {
+                    new QueryGrouping(QueryColumnType.TagKey, tagKey)
+                }
+            };
+
+            var queryDefinition = new QueryDefinition(
+                ExportType.ActualCost,
+                TimeframeType.Custom,
+                dataset)
+            {
+                TimePeriod = new QueryTimePeriod(
+                    new DateTimeOffset(startDate, TimeSpan.Zero),
+                    new DateTimeOffset(endDate, TimeSpan.Zero))
+            };
+
+            var response = await client.UsageQueryAsync(scope, queryDefinition);
+            return TransformToBreakdownItems(response.Value, topN);
+        });
+    }
+
     public async Task<Models.ForecastResult> GetCostForecastAsync(
         string subscriptionId,
         string tenantId,

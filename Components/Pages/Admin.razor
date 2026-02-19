@@ -1,0 +1,137 @@
+@page "/admin"
+@inject IFeatureFlagService FeatureFlagService
+@inject ISnackbar Snackbar
+@using FinOps.Models
+@using FinOps.Services
+
+<PageTitle>Admin - Feature Flags</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-8 pt-8">
+    <MudText Typo="Typo.h4" Class="mb-2">
+        <MudIcon Icon="@Icons.Material.Filled.AdminPanelSettings" Class="mr-2" />Feature Flags
+    </MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+        Enable or disable feature areas. Changes hide nav links and home page cards immediately.
+    </MudText>
+
+    <MudPaper Elevation="2" Class="pa-6" Style="border-radius: 12px;">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.Budgets" Label="Budgets" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.CostManagement" Label="Cost Management" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.Tagging" Label="Tagging" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.Policy" Label="Policy" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.Advisor" Label="Advisor" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.OrphanedResources" Label="Orphaned Resources" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.Security" Label="Security" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.ServiceRetirements" Label="Service Retirements" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.LoggingUsage" Label="Logging Usage" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.PrivateEndpoints" Label="Private Endpoints" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.Rightsizing" Label="Rightsizing" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.Maturity" Label="Maturity Score" Color="Color.Primary" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.Carbon" Label="Carbon Optimisation" Color="Color.Primary" />
+            </MudItem>
+        </MudGrid>
+
+        <MudDivider Class="my-6" />
+
+        <MudStack Row="true" Spacing="3">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync"
+                       StartIcon="@Icons.Material.Filled.Save">
+                Save
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ResetAllAsync"
+                       StartIcon="@Icons.Material.Filled.RestartAlt">
+                Reset All
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ClearAllAsync"
+                       StartIcon="@Icons.Material.Filled.ClearAll">
+                Clear All
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private FeatureFlags _edit = new();
+
+    protected override void OnInitialized()
+    {
+        var f = FeatureFlagService.Flags;
+        _edit = new FeatureFlags
+        {
+            Budgets = f.Budgets,
+            CostManagement = f.CostManagement,
+            Tagging = f.Tagging,
+            Policy = f.Policy,
+            Advisor = f.Advisor,
+            OrphanedResources = f.OrphanedResources,
+            Security = f.Security,
+            ServiceRetirements = f.ServiceRetirements,
+            LoggingUsage = f.LoggingUsage,
+            PrivateEndpoints = f.PrivateEndpoints,
+            Rightsizing = f.Rightsizing,
+            Maturity = f.Maturity,
+            Carbon = f.Carbon,
+        };
+    }
+
+    private async Task SaveAsync()
+    {
+        await FeatureFlagService.SaveAsync(_edit);
+        Snackbar.Add("Feature flags saved.", Severity.Success);
+    }
+
+    private async Task ResetAllAsync()
+    {
+        _edit = new FeatureFlags();
+        await FeatureFlagService.SaveAsync(_edit);
+        Snackbar.Add("All features enabled.", Severity.Info);
+    }
+
+    private async Task ClearAllAsync()
+    {
+        _edit = new FeatureFlags
+        {
+            Budgets = false,
+            CostManagement = false,
+            Tagging = false,
+            Policy = false,
+            Advisor = false,
+            OrphanedResources = false,
+            Security = false,
+            ServiceRetirements = false,
+            LoggingUsage = false,
+            PrivateEndpoints = false,
+            Rightsizing = false,
+            Maturity = false,
+            Carbon = false,
+        };
+        await FeatureFlagService.SaveAsync(_edit);
+        Snackbar.Add("All features disabled.", Severity.Warning);
+    }
+}

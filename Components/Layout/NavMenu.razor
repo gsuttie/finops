@@ -1,19 +1,101 @@
+@inject IFeatureFlagService FeatureFlagService
+@implements IDisposable
+@using FinOps.Services
+
 <MudNavMenu>
     <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Home</MudNavLink>
-    <MudNavGroup Title="Budgets" Icon="@Icons.Material.Filled.AccountBalance" Expanded="true">
-        <MudNavLink Href="budgets/subscriptions" Match="NavLinkMatch.All">Subscription Budgets</MudNavLink>
-        <MudNavLink Href="budgets/resource-groups" Match="NavLinkMatch.All">Resource Group Budgets</MudNavLink>
-    </MudNavGroup>
-    <MudNavGroup Title="Cost Management" Icon="@Icons.Material.Filled.AttachMoney" Expanded="true">
-        <MudNavLink Href="dashboard/overview" Match="NavLinkMatch.All">Overview Dashboard</MudNavLink>
-        <MudNavLink Href="costs/overview" Match="NavLinkMatch.All">Cost Overview</MudNavLink>
-        <MudNavLink Href="costs/dashboard" Match="NavLinkMatch.All">Cost Dashboard</MudNavLink>
-    </MudNavGroup>
-    <MudNavLink Href="tagging" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Label">Tagging</MudNavLink>
-    <MudNavLink Href="policy" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Policy">Policy</MudNavLink>
-    <MudNavLink Href="orphaned-resources" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.DeleteSweep">Orphaned Resources</MudNavLink>
-    <MudNavLink Href="advisor" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Lightbulb">Advisor</MudNavLink>
-    <MudNavLink Href="security-recommendations" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Shield">Security Recommendations</MudNavLink>
-    <MudNavLink Href="service-retirements" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EventBusy">Service Retirements</MudNavLink>
-    <MudNavLink Href="logging-usage" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Analytics">Logging Usage</MudNavLink>
+
+    @if (FeatureFlagService.Flags.Budgets)
+    {
+        <MudNavGroup Title="Budgets" Icon="@Icons.Material.Filled.AccountBalance" Expanded="true">
+            <MudNavLink Href="budgets/subscriptions" Match="NavLinkMatch.All">Subscription Budgets</MudNavLink>
+            <MudNavLink Href="budgets/resource-groups" Match="NavLinkMatch.All">Resource Group Budgets</MudNavLink>
+        </MudNavGroup>
+    }
+
+    @if (FeatureFlagService.Flags.CostManagement)
+    {
+        <MudNavGroup Title="Cost Management" Icon="@Icons.Material.Filled.AttachMoney" Expanded="true">
+            <MudNavLink Href="dashboard/overview" Match="NavLinkMatch.All">Overview Dashboard</MudNavLink>
+            <MudNavLink Href="costs/overview" Match="NavLinkMatch.All">Cost Overview</MudNavLink>
+            <MudNavLink Href="costs/dashboard" Match="NavLinkMatch.All">Cost Dashboard</MudNavLink>
+        </MudNavGroup>
+    }
+
+    @if (FeatureFlagService.Flags.Tagging)
+    {
+        <MudNavGroup Title="Tagging" Icon="@Icons.Material.Filled.Label" Expanded="true">
+            <MudNavLink Href="tagging" Match="NavLinkMatch.All">Resource Tagging</MudNavLink>
+            <MudNavLink Href="tagging/costs" Match="NavLinkMatch.All">Costs by Tagging</MudNavLink>
+        </MudNavGroup>
+    }
+
+    @if (FeatureFlagService.Flags.Policy)
+    {
+        <MudNavLink Href="policy" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Policy">Policy</MudNavLink>
+    }
+
+    @if (FeatureFlagService.Flags.OrphanedResources)
+    {
+        <MudNavLink Href="orphaned-resources" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.DeleteSweep">Orphaned Resources</MudNavLink>
+    }
+
+    @if (FeatureFlagService.Flags.Advisor)
+    {
+        <MudNavLink Href="advisor" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Lightbulb">Advisor</MudNavLink>
+    }
+
+    @if (FeatureFlagService.Flags.Security)
+    {
+        <MudNavLink Href="security-recommendations" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Shield">Security Recommendations</MudNavLink>
+    }
+
+    @if (FeatureFlagService.Flags.PrivateEndpoints)
+    {
+        <MudNavLink Href="private-endpoints" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Lock">Private Endpoints</MudNavLink>
+    }
+
+    @if (FeatureFlagService.Flags.ServiceRetirements)
+    {
+        <MudNavLink Href="service-retirements" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EventBusy">Service Retirements</MudNavLink>
+    }
+
+    @if (FeatureFlagService.Flags.LoggingUsage)
+    {
+        <MudNavLink Href="logging-usage" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Analytics">Logging Usage</MudNavLink>
+    }
+
+    @if (FeatureFlagService.Flags.Rightsizing)
+    {
+        <MudNavLink Href="rightsizing" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AutoAwesome">Rightsizing</MudNavLink>
+    }
+
+    @if (FeatureFlagService.Flags.Maturity)
+    {
+        <MudNavLink Href="maturity" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Insights">Maturity Score</MudNavLink>
+    }
+
+    @if (FeatureFlagService.Flags.Carbon)
+    {
+        <MudNavLink Href="carbon" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.EnergySavingsLeaf">Carbon</MudNavLink>
+    }
+
+    <MudNavLink Href="admin" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AdminPanelSettings">Admin</MudNavLink>
 </MudNavMenu>
+
+@code {
+    protected override void OnInitialized()
+    {
+        FeatureFlagService.OnFlagsChanged += OnFlagsChanged;
+    }
+
+    private void OnFlagsChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        FeatureFlagService.OnFlagsChanged -= OnFlagsChanged;
+    }
+}

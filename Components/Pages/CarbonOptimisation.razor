@@ -1,0 +1,450 @@
+@page "/carbon"
+@using FinOps.Models
+@using FinOps.Services
+@using ApexCharts
+@inject ICarbonService CarbonService
+@inject IAzureSubscriptionService SubscriptionService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IFeatureFlagService FeatureFlagService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Carbon Optimisation</PageTitle>
+
+@if (FeatureFlagService.Flags.Carbon)
+{
+    <MudText Typo="Typo.h4" Class="mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.EnergySavingsLeaf" Class="mr-2" />Carbon Optimisation
+    </MudText>
+
+    @* Tenant connection bar *@
+    <MudPaper Class="pa-3 mb-4" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+            @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+            {
+                <MudChip T="string" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Small" Variant="Variant.Outlined">
+                    @_homeTenantDisplayName
+                </MudChip>
+            }
+            @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+            {
+                <MudChip T="string" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                    @tenantId
+                </MudChip>
+            }
+            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small"
+                       StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+                Connect Tenant
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Default" Size="MudBlazor.Size.Small"
+                       StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadSubscriptions">
+                Refresh
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+
+    @* Subscription selection table *@
+    <MudTable T="TenantSubscription" Items="@_filteredSubscriptions" MultiSelection="true"
+              SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSelectedSubscriptionsChanged"
+              Loading="@_loadingSubscriptions" Hover="true" Dense="true" Elevation="2">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Subscriptions</MudText>
+            <MudSpacer />
+            <MudTextField T="string" @bind-Value="_subSearchText" Placeholder="Search subscriptions..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="MudBlazor.Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
+            <MudButton Variant="Variant.Filled" Color="MudBlazor.Color.Primary"
+                       StartIcon="@Icons.Material.Filled.EnergySavingsLeaf"
+                       OnClick="@ScanForCarbon">
+                Scan for Carbon (@_selectedSubscriptions.Count selected)
+            </MudButton>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Tenant</MudTh>
+            <MudTh>Name</MudTh>
+            <MudTh>Subscription ID</MudTh>
+            <MudTh>State</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Tenant">
+                <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
+                <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.TenantId</MudText>
+            </MudTd>
+            <MudTd DataLabel="Name">
+                <MudText Typo="Typo.body2">@context.DisplayName</MudText>
+            </MudTd>
+            <MudTd DataLabel="Subscription ID">
+                <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+            </MudTd>
+            <MudTd DataLabel="State">
+                <MudChip T="string" Color="@GetStateColor(context.State)" Size="MudBlazor.Size.Small">
+                    @context.State
+                </MudChip>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            @if (_loadError is not null)
+            {
+                <MudText Color="MudBlazor.Color.Error">@_loadError</MudText>
+            }
+            else
+            {
+                <MudText>No subscriptions found.</MudText>
+            }
+        </NoRecordsContent>
+        <LoadingContent>
+            <MudText>Loading subscriptions...</MudText>
+        </LoadingContent>
+    </MudTable>
+
+    @* Spinner *@
+    @if (_scanning)
+    {
+        <MudProgressLinear Color="MudBlazor.Color.Primary" Indeterminate="true" Class="mt-4" />
+        <MudText Typo="Typo.body2" Class="mt-2" Align="MudBlazor.Align.Center">Scanning VMs and fetching cost data…</MudText>
+    }
+
+    @if (_scannedOnce && !_scanning)
+    {
+        @* Summary chips *@
+        <MudPaper Class="pa-3 mt-4 mb-2" Elevation="1">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+                <MudChip T="string" Color="MudBlazor.Color.Default" Size="MudBlazor.Size.Small" Variant="Variant.Outlined">
+                    <b>@_vmEstimates.Count</b>&nbsp;VMs
+                </MudChip>
+                <MudChip T="string" Color="MudBlazor.Color.Info" Size="MudBlazor.Size.Small" Variant="Variant.Outlined">
+                    <b>@_vmEstimates.Sum(v => v.MonthlyKgCo2e).ToString("F1")</b>&nbsp;kg CO₂e/mo
+                </MudChip>
+                @{
+                    var cleanest = _regionSummaries.MinBy(r => r.CarbonIntensityGCo2PerKwh);
+                    var costliest = _regionSummaries.MaxBy(r => r.MonthlyCost);
+                }
+                @if (cleanest is not null)
+                {
+                    <MudChip T="string" Color="MudBlazor.Color.Success" Size="MudBlazor.Size.Small">
+                        Cleanest: @cleanest.RegionDisplayName (@cleanest.CarbonIntensityGCo2PerKwh.ToString("F0") gCO₂/kWh)
+                    </MudChip>
+                }
+                @if (costliest is not null)
+                {
+                    <MudChip T="string" Color="MudBlazor.Color.Warning" Size="MudBlazor.Size.Small">
+                        Costliest: @costliest.RegionDisplayName ($@costliest.MonthlyCost.ToString("F0")/mo)
+                    </MudChip>
+                }
+            </MudStack>
+        </MudPaper>
+
+        @if (_regionSummaries.Count > 0)
+        {
+            @* Charts *@
+            <MudGrid Spacing="3" Class="mt-2">
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-4" Elevation="2">
+                        <MudText Typo="Typo.h6" Class="mb-3">Cost vs Carbon by Region</MudText>
+                        <ApexChart TItem="RegionCarbonSummary"
+                                   Options="@_scatterOptions"
+                                   Height="320">
+                            <ApexPointSeries TItem="RegionCarbonSummary"
+                                             Items="_regionSummaries"
+                                             Name="Regions"
+                                             SeriesType="SeriesType.Scatter"
+                                             XValue="@(e => (decimal)e.MonthlyCost)"
+                                             YAggregate="@(e => e.Sum(x => (decimal)x.CarbonIntensityGCo2PerKwh))" />
+                        </ApexChart>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudPaper Class="pa-4" Elevation="2">
+                        <MudText Typo="Typo.h6" Class="mb-3">Regional Carbon Intensity</MudText>
+                        <ApexChart TItem="RegionCarbonSummary"
+                                   Options="@_barOptions"
+                                   Height="320">
+                            <ApexPointSeries TItem="RegionCarbonSummary"
+                                             Items="@(_regionSummaries.OrderByDescending(r => r.CarbonIntensityGCo2PerKwh).ToList())"
+                                             Name="gCO₂/kWh"
+                                             SeriesType="SeriesType.Bar"
+                                             XValue="@(e => e.RegionDisplayName)"
+                                             YAggregate="@(e => e.Sum(x => (decimal)x.CarbonIntensityGCo2PerKwh))" />
+                        </ApexChart>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+
+            @* Regional summary table *@
+            <MudTable T="RegionCarbonSummary" Items="@_regionSummaries"
+                      Hover="true" Dense="true" Elevation="2" Class="mt-4">
+                <ToolBarContent>
+                    <MudText Typo="Typo.h6">Regional Carbon Summary</MudText>
+                </ToolBarContent>
+                <HeaderContent>
+                    <MudTh>Region</MudTh>
+                    <MudTh>Intensity (gCO₂/kWh)</MudTh>
+                    <MudTh>Monthly Cost</MudTh>
+                    <MudTh>VMs</MudTh>
+                    <MudTh>Est CO₂e (kg/mo)</MudTh>
+                    <MudTh>Rating</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Region">
+                        <MudText Typo="Typo.body2"><strong>@context.RegionDisplayName</strong></MudText>
+                        <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">@context.Location</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Intensity (gCO₂/kWh)">
+                        <MudText Typo="Typo.body2">@context.CarbonIntensityGCo2PerKwh.ToString("F0")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Monthly Cost">
+                        <MudText Typo="Typo.body2">$@context.MonthlyCost.ToString("F2")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="VMs">
+                        <MudText Typo="Typo.body2">@context.ResourceCount</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Est CO₂e (kg/mo)">
+                        <MudText Typo="Typo.body2">@context.MonthlyKgCo2e.ToString("F2")</MudText>
+                    </MudTd>
+                    <MudTd DataLabel="Rating">
+                        @{
+                            var (ratingColor, ratingLabel) = GetCarbonRating(context.CarbonIntensityGCo2PerKwh);
+                        }
+                        <MudChip T="string" Color="@ratingColor" Size="MudBlazor.Size.Small">@ratingLabel</MudChip>
+                    </MudTd>
+                </RowTemplate>
+                <NoRecordsContent>
+                    <MudText>No regional data available.</MudText>
+                </NoRecordsContent>
+            </MudTable>
+        }
+
+        @* VM detail expansion panel *@
+        @if (_vmEstimates.Count > 0)
+        {
+            <MudExpansionPanels Class="mt-4">
+                <MudExpansionPanel Text="VM Carbon Detail">
+                    <MudTable T="CarbonEstimate" Items="@_vmEstimates"
+                              Hover="true" Dense="true" Elevation="0"
+                              FixedHeader="true" Height="400px">
+                        <HeaderContent>
+                            <MudTh>VM</MudTh>
+                            <MudTh>SKU</MudTh>
+                            <MudTh>Location</MudTh>
+                            <MudTh>Est Watts</MudTh>
+                            <MudTh>CO₂e/mo (kg)</MudTh>
+                            <MudTh>Subscription</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="VM">
+                                <MudText Typo="Typo.body2"><strong>@context.ResourceName</strong></MudText>
+                                <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">@context.ResourceGroup</MudText>
+                            </MudTd>
+                            <MudTd DataLabel="SKU">
+                                <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SkuName</MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Location">
+                                <MudText Typo="Typo.body2">@context.RegionDisplayName</MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Est Watts">
+                                <MudText Typo="Typo.body2">@context.EstimatedWatts.ToString("F0") W</MudText>
+                            </MudTd>
+                            <MudTd DataLabel="CO₂e/mo (kg)">
+                                <MudText Typo="Typo.body2">@context.MonthlyKgCo2e.ToString("F3")</MudText>
+                            </MudTd>
+                            <MudTd DataLabel="Subscription">
+                                <MudText Typo="Typo.body2">@context.SubscriptionName</MudText>
+                            </MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText>No VMs found.</MudText>
+                        </NoRecordsContent>
+                    </MudTable>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        }
+
+        @if (_vmEstimates.Count == 0 && _regionSummaries.Count == 0)
+        {
+            <MudPaper Class="pa-4 mt-4 text-center" Elevation="2">
+                <MudIcon Icon="@Icons.Material.Filled.EnergySavingsLeaf" Color="MudBlazor.Color.Success" Size="MudBlazor.Size.Large" />
+                <MudText Typo="Typo.h6" Class="mt-2">No VMs found in selected subscriptions.</MudText>
+                <MudText Typo="Typo.body2" Class="mt-1">No compute resources were discovered to estimate carbon for.</MudText>
+            </MudPaper>
+        }
+    }
+}
+else
+{
+    <MudAlert Severity="Severity.Info">
+        The Carbon Optimisation feature is currently disabled. Enable it via the <MudLink Href="admin">Admin</MudLink> page.
+    </MudAlert>
+}
+
+@code {
+    private List<TenantSubscription> _allSubscriptions = [];
+    private HashSet<TenantSubscription> _selectedSubscriptions = [];
+    private IReadOnlyList<CarbonEstimate> _vmEstimates = [];
+    private IReadOnlyList<RegionCarbonSummary> _regionSummaries = [];
+
+    private bool _loadingSubscriptions = true;
+    private bool _scanning;
+    private bool _scannedOnce;
+    private string? _loadError;
+    private string _subSearchText = "";
+    private string? _homeTenantDisplayName;
+
+    private ApexChartOptions<RegionCarbonSummary> _scatterOptions = new();
+    private ApexChartOptions<RegionCarbonSummary> _barOptions = new();
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_subSearchText)
+            ? _allSubscriptions
+            : _allSubscriptions.Where(s =>
+                s.DisplayName.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    protected override async Task OnInitializedAsync()
+    {
+        InitChartOptions();
+        (_, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        await LoadSubscriptions();
+    }
+
+    private void InitChartOptions()
+    {
+        _scatterOptions = new ApexChartOptions<RegionCarbonSummary>
+        {
+            Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+            Xaxis = new XAxis
+            {
+                Labels = new XAxisLabels
+                {
+                    Formatter = "function(val) { return '$' + parseFloat(val).toFixed(0); }"
+                }
+            },
+            Yaxis = new List<YAxis>
+            {
+                new YAxis
+                {
+                    Labels = new YAxisLabels
+                    {
+                        Formatter = "function(val) { return parseFloat(val).toFixed(0) + ' gCO2/kWh'; }"
+                    }
+                }
+            },
+            Tooltip = new Tooltip { Shared = false }
+        };
+
+        _barOptions = new ApexChartOptions<RegionCarbonSummary>
+        {
+            Chart = new Chart { Toolbar = new Toolbar { Show = false } },
+            PlotOptions = new PlotOptions
+            {
+                Bar = new PlotOptionsBar { Horizontal = true }
+            },
+            Xaxis = new XAxis
+            {
+                Labels = new XAxisLabels
+                {
+                    Formatter = "function(val) { return parseFloat(val).toFixed(0) + ' gCO2/kWh'; }"
+                }
+            },
+            DataLabels = new DataLabels { Enabled = false }
+        };
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loadingSubscriptions = true;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            _allSubscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load subscriptions: {ex.Message}";
+        }
+        finally
+        {
+            _loadingSubscriptions = false;
+        }
+    }
+
+    private void OnSelectedSubscriptionsChanged(HashSet<TenantSubscription> selected)
+    {
+        _selectedSubscriptions = selected;
+    }
+
+    private async Task ScanForCarbon()
+    {
+        if (_selectedSubscriptions.Count == 0)
+        {
+            Snackbar.Add("Please select at least one subscription.", Severity.Warning);
+            return;
+        }
+
+        _scanning = true;
+        _scannedOnce = true;
+        _vmEstimates = [];
+        _regionSummaries = [];
+        StateHasChanged();
+
+        try
+        {
+            var now = DateTime.UtcNow;
+            var monthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+
+            _vmEstimates = await CarbonService.GetVmCarbonEstimatesAsync(_selectedSubscriptions);
+            _regionSummaries = await CarbonService.GetRegionCarbonSummariesAsync(
+                _selectedSubscriptions, _vmEstimates, monthStart, now);
+
+            var totalCo2 = _vmEstimates.Sum(v => v.MonthlyKgCo2e);
+            Snackbar.Add($"Found {_vmEstimates.Count} VMs — est. {totalCo2:F1} kg CO₂e/mo", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error scanning for carbon data: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _scanning = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect Tenant", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+
+    private static (MudBlazor.Color, string) GetCarbonRating(double intensity) => intensity switch
+    {
+        <= 100 => (MudBlazor.Color.Success, "Low Carbon"),
+        <= 300 => (MudBlazor.Color.Warning, "Moderate"),
+        _      => (MudBlazor.Color.Error,   "High Carbon")
+    };
+
+    private static MudBlazor.Color GetStateColor(string? state) => state switch
+    {
+        "Enabled"  => MudBlazor.Color.Success,
+        "Disabled" => MudBlazor.Color.Error,
+        "Warned"   => MudBlazor.Color.Warning,
+        _          => MudBlazor.Color.Default
+    };
+}

@@ -1,0 +1,416 @@
+@page "/rightsizing"
+@using FinOps.Models
+@using FinOps.Services
+@inject IAzureSubscriptionService SubscriptionService
+@inject IRightsizingService RightsizingService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Rightsizing Recommendations</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Rightsizing Recommendations</MudText>
+
+@* Tenant connection bar *@
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadSubscriptions">
+            Refresh
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+@* Subscription selection table *@
+<MudTable T="TenantSubscription" Items="@_filteredSubscriptions" MultiSelection="true"
+          SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSelectedSubscriptionsChanged"
+          Loading="@_loadingSubscriptions" Hover="true" Dense="true" Elevation="2">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Subscriptions</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_subSearchText" Placeholder="Search subscriptions..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.AutoAwesome"
+                   OnClick="@ScanForRecommendations"
+                   Disabled="@(_selectedSubscriptions.Count == 0)">
+            Scan (@_selectedSubscriptions.Count selected)
+        </MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
+            <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.TenantId</MudText>
+        </MudTd>
+        <MudTd DataLabel="Name">
+            <MudLink Href="@GetAzurePortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                @context.DisplayName
+            </MudLink>
+        </MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudLink Href="@GetAzurePortalUrl(context)" Target="_blank" Typo="Typo.body2" Style="font-family: monospace;">
+                @context.SubscriptionId
+            </MudLink>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        @if (_loadError is not null)
+        {
+            <MudText Color="Color.Error">@_loadError</MudText>
+        }
+        else
+        {
+            <MudText>No subscriptions found.</MudText>
+        }
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@* Summary chips *@
+@if (_recommendations.Count > 0)
+{
+    <MudPaper Class="pa-3 mt-4 mb-2" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+            <MudText Typo="Typo.body1" Class="mr-2"><b>@_recommendations.Count</b> rightsizing recommendations</MudText>
+
+            @foreach (var impact in new[] { "High", "Medium", "Low" })
+            {
+                @if (_impactCounts.TryGetValue(impact, out var count) && count > 0)
+                {
+                    <MudChip T="string" Color="@GetImpactColor(impact)" Size="Size.Small"
+                             Variant="@(_activeImpact == impact ? Variant.Filled : Variant.Outlined)"
+                             OnClick="@(() => ToggleImpactFilter(impact))">
+                        @impact (@count)
+                    </MudChip>
+                }
+            }
+
+            @if (_activeImpact is not null)
+            {
+                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Default"
+                           OnClick="@ClearFilters">
+                    Clear Filters
+                </MudButton>
+            }
+        </MudStack>
+    </MudPaper>
+}
+
+@* Results *@
+@if (_scanning)
+{
+    <MudPaper Class="pa-4 mt-4 text-center" Elevation="2">
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+        <MudText Typo="Typo.body1" Class="mt-2">Scanning for rightsizing recommendations...</MudText>
+    </MudPaper>
+}
+else if (_recommendations.Count > 0)
+{
+    <MudTable T="RightsizingRecommendation" Items="@_filteredRecommendations"
+              Loading="@_scanning" Hover="true" Dense="true" Elevation="2" Class="mt-4"
+              FixedHeader="true" Height="600px">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Recommendations</MudText>
+            <MudSpacer />
+            <MudSelect T="string" Value="_activeImpact" ValueChanged="OnImpactChanged"
+                       Placeholder="All impacts" Clearable="true" Dense="true"
+                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.FilterList"
+                       Style="max-width: 220px;" Class="mr-3">
+                @foreach (var impact in new[] { "High", "Medium", "Low" })
+                {
+                    @if (_impactCounts.TryGetValue(impact, out var count))
+                    {
+                        <MudSelectItem T="string" Value="@impact">@impact (@count)</MudSelectItem>
+                    }
+                }
+            </MudSelect>
+            <MudTextField T="string" @bind-Value="_searchText" Placeholder="Search..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium" Immediate="true" Style="max-width: 300px;" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Resource</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh>Current SKU</MudTh>
+            <MudTh>Recommended Action</MudTh>
+            <MudTh>Potential Savings</MudTh>
+            <MudTh>Impact</MudTh>
+            <MudTh>Resource Group</MudTh>
+            <MudTh>Subscription</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Resource">
+                <MudLink Href="@GetResourcePortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                    <strong>@context.ResourceName</strong>
+                </MudLink>
+            </MudTd>
+            <MudTd DataLabel="Type">
+                <MudChip T="string" Color="Color.Info" Size="Size.Small">@context.ResourceType</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Current SKU">
+                <MudText Typo="Typo.body2">@(context.CurrentSku ?? "-")</MudText>
+            </MudTd>
+            <MudTd DataLabel="Recommended Action">
+                <MudText Typo="Typo.body2">@(context.RecommendedAction ?? context.RecommendationTitle)</MudText>
+            </MudTd>
+            <MudTd DataLabel="Potential Savings">
+                @if (context.PotentialSavingsMonthly.HasValue)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Success">
+                        $@context.PotentialSavingsMonthly.Value.ToString("F2")/mo
+                    </MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">-</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Impact">
+                <MudChip T="string" Color="@GetImpactColor(context.ImpactLevel)" Size="Size.Small">
+                    @context.ImpactLevel
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Resource Group">
+                <MudLink Href="@GetResourceGroupPortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                    @context.ResourceGroup
+                </MudLink>
+            </MudTd>
+            <MudTd DataLabel="Subscription">
+                <MudLink Href="@GetSubscriptionPortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                    @context.SubscriptionName
+                </MudLink>
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No recommendations match the current filters.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+else if (_scannedOnce && _recommendations.Count == 0)
+{
+    <MudPaper Class="pa-4 mt-4 text-center" Elevation="2">
+        <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" Size="Size.Large" />
+        <MudText Typo="Typo.h6" Class="mt-2">No rightsizing recommendations found!</MudText>
+        <MudText Typo="Typo.body2" Class="mt-1">Your selected subscriptions have no VM rightsizing or shutdown recommendations.</MudText>
+    </MudPaper>
+}
+
+@code {
+    private List<TenantSubscription> _allSubscriptions = [];
+    private List<TenantSubscription> _filteredSubscriptions = [];
+    private HashSet<TenantSubscription> _selectedSubscriptions = [];
+    private List<RightsizingRecommendation> _recommendations = [];
+    private List<RightsizingRecommendation> _filteredRecommendations = [];
+
+    private bool _loadingSubscriptions = true;
+    private bool _scanning = false;
+    private bool _scannedOnce = false;
+    private string? _loadError;
+    private string? _homeTenantDisplayName;
+
+    private string _subSearchText = "";
+    private string _searchText = "";
+    private string? _activeImpact;
+
+    private Dictionary<string, int> _impactCounts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loadingSubscriptions = true;
+        _loadError = null;
+
+        try
+        {
+            _allSubscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+            _filteredSubscriptions = _allSubscriptions;
+
+            var homeTenant = _allSubscriptions.FirstOrDefault();
+            if (homeTenant is not null)
+            {
+                _homeTenantDisplayName = homeTenant.TenantDisplayName;
+            }
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load subscriptions: {ex.Message}";
+        }
+        finally
+        {
+            _loadingSubscriptions = false;
+        }
+    }
+
+    private void OnSelectedSubscriptionsChanged(HashSet<TenantSubscription> selectedItems)
+    {
+        _selectedSubscriptions = selectedItems;
+    }
+
+    private async Task ScanForRecommendations()
+    {
+        if (_selectedSubscriptions.Count == 0)
+        {
+            Snackbar.Add("Please select at least one subscription", Severity.Warning);
+            return;
+        }
+
+        _scanning = true;
+        _scannedOnce = true;
+
+        try
+        {
+            _recommendations = (await RightsizingService.GetRecommendationsAsync(_selectedSubscriptions)).ToList();
+
+            _impactCounts = _recommendations
+                .GroupBy(r => r.ImpactLevel)
+                .ToDictionary(g => g.Key, g => g.Count());
+
+            ApplyFilters();
+
+            if (_recommendations.Count == 0)
+            {
+                Snackbar.Add("No rightsizing recommendations found", Severity.Info);
+            }
+            else
+            {
+                Snackbar.Add($"Found {_recommendations.Count} rightsizing recommendations", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error scanning for recommendations: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _scanning = false;
+        }
+    }
+
+    private void OnImpactChanged(string? value)
+    {
+        _activeImpact = value;
+        ApplyFilters();
+    }
+
+    private void ToggleImpactFilter(string impact)
+    {
+        _activeImpact = _activeImpact == impact ? null : impact;
+        ApplyFilters();
+    }
+
+    private void ClearFilters()
+    {
+        _activeImpact = null;
+        _searchText = "";
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        _filteredRecommendations = _recommendations.Where(r =>
+        {
+            if (_activeImpact is not null && r.ImpactLevel != _activeImpact)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                var search = _searchText.ToLowerInvariant();
+                return r.ResourceName.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                       r.ResourceType.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                       r.ResourceGroup.Contains(search, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return true;
+        }).ToList();
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect to Tenant");
+        var result = await dialog.Result;
+        if (!result.Canceled)
+        {
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+
+    private string GetAzurePortalUrl(TenantSubscription sub) =>
+        $"https://portal.azure.com/#@{sub.TenantId}/resource/subscriptions/{sub.SubscriptionId}/overview";
+
+    private string GetResourcePortalUrl(RightsizingRecommendation r) =>
+        $"https://portal.azure.com/#@{r.TenantId}/resource{r.ResourceId}";
+
+    private string GetResourceGroupPortalUrl(RightsizingRecommendation r) =>
+        $"https://portal.azure.com/#@{r.TenantId}/resource/subscriptions/{r.SubscriptionId}/resourceGroups/{r.ResourceGroup}/overview";
+
+    private string GetSubscriptionPortalUrl(RightsizingRecommendation r) =>
+        $"https://portal.azure.com/#@{r.TenantId}/resource/subscriptions/{r.SubscriptionId}/overview";
+
+    private Color GetStateColor(string state) => state?.ToLowerInvariant() switch
+    {
+        "enabled" => Color.Success,
+        "disabled" => Color.Error,
+        _ => Color.Default
+    };
+
+    private Color GetImpactColor(string impact) => impact?.ToLowerInvariant() switch
+    {
+        "high" => Color.Error,
+        "medium" => Color.Warning,
+        "low" => Color.Info,
+        _ => Color.Default
+    };
+
+    protected override void OnParametersSet()
+    {
+        _filteredSubscriptions = string.IsNullOrWhiteSpace(_subSearchText)
+            ? _allSubscriptions
+            : _allSubscriptions.Where(s =>
+                s.DisplayName.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+        ApplyFilters();
+    }
+}

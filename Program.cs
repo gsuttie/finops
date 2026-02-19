@@ -22,6 +22,11 @@ builder.Services.AddScoped<IAdvisorService, AdvisorService>();
 builder.Services.AddScoped<ILogAnalyticsService, LogAnalyticsService>();
 builder.Services.AddScoped<ISecurityRecommendationService, SecurityRecommendationService>();
 builder.Services.AddScoped<IServiceRetirementService, ServiceRetirementService>();
+builder.Services.AddScoped<IPrivateEndpointService, PrivateEndpointService>();
+builder.Services.AddScoped<IRightsizingService, RightsizingService>();
+builder.Services.AddScoped<IMaturityService, MaturityService>();
+builder.Services.AddScoped<ICarbonService, CarbonService>();
+builder.Services.AddSingleton<IFeatureFlagService, FeatureFlagService>();
 
 var app = builder.Build();
 
