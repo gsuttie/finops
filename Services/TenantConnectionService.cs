@@ -8,6 +8,9 @@ public class TenantConnectionService(TenantClientManager tenantClientManager) : 
 
     public async Task<TenantConnectionResult> ConnectWithFallbackAsync(string tenantId, Action<string>? onStatusChanged = null)
     {
+        if (!Guid.TryParse(tenantId, out _))
+            return new TenantConnectionResult(TenantConnectionStatus.Failed, "Invalid tenant ID format.");
+
         onStatusChanged?.Invoke("Checking existing credentials...");
 
         if (await tenantClientManager.ValidateTenantAsync(tenantId))
