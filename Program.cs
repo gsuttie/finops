@@ -27,6 +27,7 @@ builder.Services.AddScoped<IRightsizingService, RightsizingService>();
 builder.Services.AddScoped<IMaturityService, MaturityService>();
 builder.Services.AddScoped<ICarbonService, CarbonService>();
 builder.Services.AddSingleton<IFeatureFlagService, FeatureFlagService>();
+builder.Services.AddSingleton<IThemeService, ThemeService>();
 
 var app = builder.Build();
 

@@ -1,6 +1,9 @@
 @inherits LayoutComponentBase
+@inject IThemeService ThemeService
+@implements IDisposable
+@using FinOps.Services
 
-<MudThemeProvider @bind-IsDarkMode="_isDarkMode" Theme="_theme" />
+<MudThemeProvider @bind-IsDarkMode="_isDarkMode" Theme="@ThemeService.GetMudTheme()" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -27,35 +30,26 @@
 
 @code {
     private bool _drawerOpen = true;
-    private bool _isDarkMode = false;
+    private bool _isDarkMode;
 
-    private readonly MudTheme _theme = new()
+    protected override void OnInitialized()
     {
-        PaletteLight = new PaletteLight
-        {
-            Primary = "#0078D4",        // Azure blue
-            PrimaryDarken = "#005A9E",
-            PrimaryLighten = "#50A0FF",
-            Secondary = "#00B4FF",
-            AppbarBackground = "#0078D4",
-        },
-        PaletteDark = new PaletteDark
-        {
-            Primary = "#0078D4",        // Azure blue
-            PrimaryDarken = "#005A9E",
-            PrimaryLighten = "#50A0FF",
-            Secondary = "#00B4FF",
-            AppbarBackground = "#0078D4",
-        }
-    };
+        _isDarkMode = ThemeService.DefaultIsDarkMode;
+        ThemeService.OnThemeChanged += HandleThemeChanged;
+    }
 
-    /// <summary>
-    /// Toggles the side navigation drawer between open and closed states.
-    /// </summary>
+    private void HandleThemeChanged()
+    {
+        _isDarkMode = ThemeService.DefaultIsDarkMode;
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ThemeService.OnThemeChanged -= HandleThemeChanged;
+    }
+
     private void ToggleDrawer() => _drawerOpen = !_drawerOpen;
 
-    /// <summary>
-    /// Toggles between dark mode and light mode.
-    /// </summary>
     private void ToggleDarkMode() => _isDarkMode = !_isDarkMode;
 }

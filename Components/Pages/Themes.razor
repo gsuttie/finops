@@ -1,0 +1,149 @@
+@page "/themes"
+@inject IThemeService ThemeService
+@implements IDisposable
+@using FinOps.Services
+
+<PageTitle>Themes</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">Themes</MudText>
+<MudText Typo="Typo.body1" Class="mb-6" Color="Color.Secondary">Choose a visual style for the entire application. Your selection persists across sessions.</MudText>
+
+<MudGrid>
+    @foreach (var info in _themes)
+    {
+        var isActive = ThemeService.CurrentTheme == info.Theme;
+        <MudItem xs="12" sm="6" md="4">
+            <MudCard Outlined="true" Style="@(isActive ? "border: 2px solid var(--mud-palette-primary);" : "")">
+                <MudCardContent>
+                    @* Inline CSS preview mockup — no image files *@
+                    <div style="@($"background:{info.ContentBg};") width:100%; height:110px; border-radius:4px; overflow:hidden; border:1px solid rgba(128,128,128,0.25);">
+                        @* Appbar row *@
+                        <div style="@($"background:{info.AppbarBg};") height:18px; display:flex; align-items:center; padding:0 6px; gap:4px;">
+                            <div style="width:8px;height:8px;background:rgba(255,255,255,0.45);border-radius:1px;"></div>
+                            <div style="height:3px;width:36px;background:rgba(255,255,255,0.35);border-radius:2px;"></div>
+                            <div style="flex:1;"></div>
+                            <div style="width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,0.4);"></div>
+                        </div>
+                        @* Body: sidebar + content *@
+                        <div style="display:flex; height:92px;">
+                            @* Sidebar *@
+                            <div style="@($"background:{info.SidebarBg};") width:30px; padding:6px 4px; display:flex; flex-direction:column; gap:5px;">
+                                <div style="height:3px;border-radius:1px;@($"background:{info.NavItemColor};") opacity:0.8;"></div>
+                                <div style="height:3px;border-radius:1px;@($"background:{info.NavItemColor};") opacity:0.5;"></div>
+                                <div style="height:3px;border-radius:1px;@($"background:{info.NavItemColor};") opacity:0.5;"></div>
+                                <div style="height:3px;border-radius:1px;@($"background:{info.NavItemColor};") opacity:0.5;"></div>
+                                <div style="height:3px;border-radius:1px;@($"background:{info.NavItemColor};") opacity:0.5;"></div>
+                            </div>
+                            @* Content area *@
+                            <div style="@($"background:{info.ContentBg};") flex:1; padding:6px 8px; display:flex; flex-direction:column; gap:5px;">
+                                <div style="display:flex; gap:5px;">
+                                    <div style="@($"background:{info.CardBg}; border:1px solid {info.CardBorder};") flex:1; height:26px; border-radius:2px;"></div>
+                                    <div style="@($"background:{info.CardBg}; border:1px solid {info.CardBorder};") flex:1; height:26px; border-radius:2px;"></div>
+                                </div>
+                                <div style="@($"background:{info.CardBg}; border:1px solid {info.CardBorder};") width:100%; height:22px; border-radius:2px;"></div>
+                                <div style="@($"background:{info.CardBg}; border:1px solid {info.CardBorder};") width:65%; height:16px; border-radius:2px;"></div>
+                                @* Primary accent bar *@
+                                <div style="@($"background:{info.PrimaryColor};") width:40%; height:4px; border-radius:2px; margin-top:2px;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <MudText Typo="Typo.h6" Class="mt-3 mb-1">@info.Name</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">@info.Description</MudText>
+                </MudCardContent>
+                <MudCardActions Class="px-4 pb-4">
+                    @if (isActive)
+                    {
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Check"
+                                   Size="Size.Small"
+                                   OnClick="() => { }">Active</MudButton>
+                    }
+                    else
+                    {
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Primary"
+                                   Size="Size.Small"
+                                   OnClick="() => SelectTheme(info.Theme)">Select</MudButton>
+                    }
+                </MudCardActions>
+            </MudCard>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private record ThemePreview(
+        AppTheme Theme,
+        string Name,
+        string Description,
+        string AppbarBg,
+        string SidebarBg,
+        string ContentBg,
+        string CardBg,
+        string CardBorder,
+        string NavItemColor,
+        string PrimaryColor
+    );
+
+    private readonly ThemePreview[] _themes =
+    [
+        new ThemePreview(
+            Theme: AppTheme.AzureBlue,
+            Name: "Azure Blue",
+            Description: "Clean Microsoft/Azure corporate branding. Light mode default.",
+            AppbarBg: "#0078D4",
+            SidebarBg: "#F3F3F3",
+            ContentBg: "#FFFFFF",
+            CardBg: "#F0F4FF",
+            CardBorder: "#C8DAFF",
+            NavItemColor: "#0078D4",
+            PrimaryColor: "#0078D4"
+        ),
+        new ThemePreview(
+            Theme: AppTheme.MissionControl,
+            Name: "Mission Control",
+            Description: "Apollo-era CRT terminal. Phosphor green on deep black.",
+            AppbarBg: "#040A04",
+            SidebarBg: "#0C170C",
+            ContentBg: "#080D08",
+            CardBg: "#0E1D0E",
+            CardBorder: "#163016",
+            NavItemColor: "#00C940",
+            PrimaryColor: "#00C940"
+        ),
+        new ThemePreview(
+            Theme: AppTheme.DarkFinance,
+            Name: "Dark Finance",
+            Description: "Bloomberg terminal aesthetic. Amber gold on deep navy.",
+            AppbarBg: "#050A14",
+            SidebarBg: "#0D1526",
+            ContentBg: "#070C18",
+            CardBg: "#0D1A2E",
+            CardBorder: "#1E293B",
+            NavItemColor: "#F59E0B",
+            PrimaryColor: "#F59E0B"
+        )
+    ];
+
+    private async Task SelectTheme(AppTheme theme)
+    {
+        await ThemeService.SetThemeAsync(theme);
+    }
+
+    protected override void OnInitialized()
+    {
+        ThemeService.OnThemeChanged += HandleThemeChanged;
+    }
+
+    private void HandleThemeChanged()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ThemeService.OnThemeChanged -= HandleThemeChanged;
+    }
+}
