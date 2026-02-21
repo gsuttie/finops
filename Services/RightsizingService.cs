@@ -40,15 +40,13 @@ public class RightsizingService(
         {
             var client = tenantClientManager.GetClientForTenant(tenantId);
             var subscriptionIds = subscriptions.Select(s => s.SubscriptionId).ToList();
-            var subIdsCsv = string.Join("','", subscriptionIds);
 
-            var query = $"""
+            var query = """
                 advisorresources
                 | where type == "microsoft.advisor/recommendations"
                 | where properties.category == "Cost"
                 | where properties.shortDescription.solution contains "ize"
                    or properties.shortDescription.solution contains "hutdown"
-                | where subscriptionId in ('{subIdsCsv}')
                 | project id, name, subscriptionId, resourceGroup, location,
                     impact = properties.impact,
                     title = properties.shortDescription.solution,

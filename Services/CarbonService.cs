@@ -222,12 +222,10 @@ public class CarbonService(
         {
             var client = tenantClientManager.GetClientForTenant(tenantId);
             var subscriptionIds = subscriptions.Select(s => s.SubscriptionId).ToList();
-            var subIdsCsv = string.Join("','", subscriptionIds);
 
-            var query = $"""
+            var query = """
                 resources
                 | where type =~ 'microsoft.compute/virtualmachines'
-                | where subscriptionId in ('{subIdsCsv}')
                 | project name, resourceGroup, location, subscriptionId,
                           skuName = tostring(properties.hardwareProfile.vmSize)
                 | order by location asc
