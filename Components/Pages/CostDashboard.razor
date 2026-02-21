@@ -9,6 +9,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject NavigationManager NavigationManager
+@inject ILogger<CostDashboard> Logger
 
 <PageTitle>Cost Dashboard</PageTitle>
 
@@ -306,7 +307,8 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load subscriptions: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to load subscriptions");
+            Snackbar.Add("Failed to load subscriptions.", Severity.Error);
         }
         finally
         {
@@ -344,7 +346,8 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load dashboard data: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to load dashboard data");
+            Snackbar.Add("Failed to load dashboard data.", Severity.Error);
         }
         finally
         {

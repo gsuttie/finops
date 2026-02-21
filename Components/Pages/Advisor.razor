@@ -6,6 +6,7 @@
 @inject TenantClientManager TenantClientManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<Advisor> Logger
 
 <PageTitle>Advisor Recommendations</PageTitle>
 
@@ -280,7 +281,8 @@
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -350,7 +352,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to fetch recommendations: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to fetch recommendations");
+            Snackbar.Add("Failed to fetch recommendations.", Severity.Error);
         }
         finally
         {

@@ -3,10 +3,11 @@ using Azure.ResourceManager;
 using Azure.ResourceManager.Resources;
 using Azure.ResourceManager.Resources.Models;
 using FinOps.Models;
+using Microsoft.Extensions.Logging;
 
 namespace FinOps.Services;
 
-public class ResourceTaggingService(TenantClientManager tenantClientManager) : IResourceTaggingService
+public class ResourceTaggingService(TenantClientManager tenantClientManager, ILogger<ResourceTaggingService> logger) : IResourceTaggingService
 {
     public async Task<IReadOnlyList<ResourceGroupInfo>> GetResourceGroupsAsync(TenantSubscription subscription)
     {
@@ -119,7 +120,7 @@ public class ResourceTaggingService(TenantClientManager tenantClientManager) : I
         return results;
     }
 
-    private static async Task<TagOperationResult> TagResourceSafe(
+    private async Task<TagOperationResult> TagResourceSafe(
         TagResource tagResource, TagResourcePatch patch, string name, string type)
     {
         try
@@ -144,12 +145,13 @@ public class ResourceTaggingService(TenantClientManager tenantClientManager) : I
         }
         catch (RequestFailedException ex)
         {
+            logger.LogError(ex, "Failed to apply tag operation to resource {ResourceName} ({ResourceType})", name, type);
             return new TagOperationResult
             {
                 ResourceName = name,
                 ResourceType = type,
                 Success = false,
-                ErrorMessage = ex.Message
+                ErrorMessage = "An unexpected error occurred."
             };
         }
     }

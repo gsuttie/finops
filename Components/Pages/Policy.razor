@@ -7,6 +7,7 @@
 @inject TenantClientManager TenantClientManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<Policy> Logger
 
 <PageTitle>Policy</PageTitle>
 
@@ -381,7 +382,8 @@
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -464,7 +466,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load policies: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to load policies");
+            Snackbar.Add("Failed to load policies.", Severity.Error);
             _policyAssignments.Clear();
         }
         finally
@@ -541,7 +544,8 @@
         }
         catch (Exception ex)
         {
-            _rgLoadError = $"Failed to load resource groups: {ex.Message}";
+            Logger.LogError(ex, "Failed to load resource groups");
+            _rgLoadError = "Failed to load resource groups.";
             _resourceGroups.Clear();
         }
         finally
@@ -633,7 +637,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error removing tags: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Error removing tags");
+            Snackbar.Add("Error removing tags.", Severity.Error);
         }
         finally
         {

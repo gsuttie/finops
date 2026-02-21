@@ -8,6 +8,7 @@
 @inject TenantClientManager TenantClientManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<CostsByTagging> Logger
 
 <PageTitle>Costs by Tagging</PageTitle>
 
@@ -240,7 +241,8 @@ else if (_tagsLoaded && !_analysingCosts)
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -282,7 +284,8 @@ else if (_tagsLoaded && !_analysingCosts)
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load tags: {ex.Message}";
+            Logger.LogError(ex, "Failed to load tags");
+            _loadError = "Failed to load tags.";
         }
         finally
         {
@@ -332,7 +335,8 @@ else if (_tagsLoaded && !_analysingCosts)
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to analyse costs: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to analyse costs");
+            Snackbar.Add("Failed to analyse costs.", Severity.Error);
         }
         finally
         {

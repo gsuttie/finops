@@ -9,6 +9,7 @@
 @inject TenantClientManager TenantClientManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<CostOverview> Logger
 
 <PageTitle>Cost Overview</PageTitle>
 
@@ -366,7 +367,8 @@
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -417,7 +419,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to calculate total: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to calculate total cost");
+            Snackbar.Add("Failed to calculate total.", Severity.Error);
         }
     }
 
@@ -589,7 +592,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load chart data: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to load chart data");
+            Snackbar.Add("Failed to load chart data.", Severity.Error);
         }
         finally
         {

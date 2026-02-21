@@ -6,6 +6,7 @@
 @inject TenantClientManager TenantClientManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<LoggingUsage> Logger
 
 <PageTitle>Logging Usage</PageTitle>
 
@@ -238,7 +239,8 @@
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -299,7 +301,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to fetch workspaces: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to fetch workspaces");
+            Snackbar.Add("Failed to fetch workspaces.", Severity.Error);
         }
         finally
         {
@@ -334,7 +337,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to query usage: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to query workspace usage");
+            Snackbar.Add("Failed to query usage.", Severity.Error);
         }
         finally
         {

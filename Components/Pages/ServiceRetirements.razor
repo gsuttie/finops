@@ -6,6 +6,7 @@
 @inject TenantClientManager TenantClientManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<ServiceRetirements> Logger
 
 <PageTitle>Service Retirements</PageTitle>
 
@@ -330,7 +331,8 @@
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -400,7 +402,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Scan failed: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Service retirements scan failed");
+            Snackbar.Add("Scan failed.", Severity.Error);
         }
         finally
         {

@@ -7,6 +7,7 @@
 @inject TenantClientManager TenantClientManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<ResourceGroupBudgets> Logger
 
 <PageTitle>Resource Group Budgets</PageTitle>
 
@@ -277,7 +278,8 @@
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -319,7 +321,8 @@
         }
         catch (Exception ex)
         {
-            _rgLoadError = $"Failed to load resource groups: {ex.Message}";
+            Logger.LogError(ex, "Failed to load resource groups");
+            _rgLoadError = "Failed to load resource groups.";
             _resourceGroups.Clear();
         }
         finally
@@ -386,7 +389,8 @@
             }
             catch (Exception ex)
             {
-                Snackbar.Add($"Error creating budget: {ex.Message}", Severity.Error);
+                Logger.LogError(ex, "Error creating budget");
+                Snackbar.Add("Error creating budget.", Severity.Error);
             }
             finally
             {
@@ -415,7 +419,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load budgets: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to load budgets");
+            Snackbar.Add("Failed to load budgets.", Severity.Error);
             _existingBudgets.Clear();
         }
         finally
@@ -434,7 +439,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to load budget data: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to load budget data");
+            Snackbar.Add("Failed to load budget data.", Severity.Error);
             return;
         }
 
@@ -457,7 +463,8 @@
             }
             catch (Exception ex)
             {
-                Snackbar.Add($"Failed to update budget: {ex.Message}", Severity.Error);
+                Logger.LogError(ex, "Failed to update budget");
+                Snackbar.Add("Failed to update budget.", Severity.Error);
             }
         }
     }
@@ -479,7 +486,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Failed to delete budget: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Failed to delete budget");
+            Snackbar.Add("Failed to delete budget.", Severity.Error);
         }
     }
 

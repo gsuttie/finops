@@ -6,6 +6,7 @@
 @inject TenantClientManager TenantClientManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<PrivateEndpoints> Logger
 
 <PageTitle>Private Endpoint Recommendations</PageTitle>
 
@@ -249,7 +250,8 @@ else if (_scannedOnce && _recommendations.Count == 0)
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -295,7 +297,8 @@ else if (_scannedOnce && _recommendations.Count == 0)
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error scanning for recommendations: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Error scanning for private endpoint recommendations");
+            Snackbar.Add("Error scanning for recommendations.", Severity.Error);
         }
         finally
         {

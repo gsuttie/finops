@@ -6,6 +6,7 @@
 @inject TenantClientManager TenantClientManager
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject ILogger<Tagging> Logger
 
 <PageTitle>Tagging</PageTitle>
 
@@ -267,7 +268,8 @@
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -306,7 +308,8 @@
         }
         catch (Exception ex)
         {
-            _rgLoadError = $"Failed to load resource groups: {ex.Message}";
+            Logger.LogError(ex, "Failed to load resource groups");
+            _rgLoadError = "Failed to load resource groups.";
             _resourceGroups.Clear();
             _rgSubscriptionMap.Clear();
         }
@@ -402,7 +405,8 @@
             }
             catch (Exception ex)
             {
-                Snackbar.Add($"Error applying tags: {ex.Message}", Severity.Error);
+                Logger.LogError(ex, "Error applying tags");
+                Snackbar.Add("Error applying tags.", Severity.Error);
             }
             finally
             {
@@ -439,7 +443,8 @@
         }
         catch (Exception ex)
         {
-            _rgLoadError = $"Failed to reload resource groups: {ex.Message}";
+            Logger.LogError(ex, "Failed to reload resource groups");
+            _rgLoadError = "Failed to reload resource groups.";
         }
         finally
         {

@@ -7,10 +7,11 @@ using Azure.ResourceManager.Models;
 using Azure.ResourceManager.Resources;
 using Azure.ResourceManager.Resources.Models;
 using FinOps.Models;
+using Microsoft.Extensions.Logging;
 
 namespace FinOps.Services;
 
-public class PolicyService(TenantClientManager tenantClientManager) : IPolicyService
+public class PolicyService(TenantClientManager tenantClientManager, ILogger<PolicyService> logger) : IPolicyService
 {
     private const string TagInheritancePolicyDefinitionId =
         "/providers/Microsoft.Authorization/policyDefinitions/b27a0cbd-a167-4dfa-ae64-4337be671140";
@@ -129,13 +130,14 @@ public class PolicyService(TenantClientManager tenantClientManager) : IPolicySer
         }
         catch (RequestFailedException ex)
         {
+            logger.LogError(ex, "Failed to assign tag inheritance policy for subscription {SubscriptionId}", subscription.SubscriptionId);
             return new PolicyOperationResult
             {
                 SubscriptionName = subscription.DisplayName,
                 SubscriptionId = subscription.SubscriptionId,
                 Operation = "Assign",
                 Success = false,
-                ErrorMessage = ex.Message
+                ErrorMessage = "An unexpected error occurred."
             };
         }
     }
@@ -163,13 +165,14 @@ public class PolicyService(TenantClientManager tenantClientManager) : IPolicySer
         }
         catch (RequestFailedException ex)
         {
+            logger.LogError(ex, "Failed to remove policy assignment {AssignmentName} for subscription {SubscriptionId}", assignmentName, subscription.SubscriptionId);
             return new PolicyOperationResult
             {
                 SubscriptionName = subscription.DisplayName,
                 SubscriptionId = subscription.SubscriptionId,
                 Operation = "Remove",
                 Success = false,
-                ErrorMessage = ex.Message,
+                ErrorMessage = "An unexpected error occurred.",
                 PolicyAssignmentName = assignmentName
             };
         }

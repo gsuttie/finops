@@ -3,10 +3,11 @@ using Azure.ResourceManager.Consumption;
 using Azure.ResourceManager.Consumption.Models;
 using Azure.ResourceManager.Resources;
 using FinOps.Models;
+using Microsoft.Extensions.Logging;
 
 namespace FinOps.Services;
 
-public class BudgetService(TenantClientManager tenantClientManager) : IBudgetService
+public class BudgetService(TenantClientManager tenantClientManager, ILogger<BudgetService> logger) : IBudgetService
 {
     public async Task<IReadOnlyList<BudgetInfo>> GetBudgetsAsync(TenantSubscription subscription)
     {
@@ -108,13 +109,14 @@ public class BudgetService(TenantClientManager tenantClientManager) : IBudgetSer
             }
             catch (RequestFailedException ex)
             {
+                logger.LogError(ex, "Failed to create budget for resource group {ResourceGroup}", rg.Name);
                 results.Add(new BudgetCreationResult
                 {
                     SubscriptionName = subscription.DisplayName,
                     SubscriptionId = subscription.SubscriptionId,
                     ResourceGroupName = rg.Name,
                     Success = false,
-                    ErrorMessage = ex.Message
+                    ErrorMessage = "An unexpected error occurred."
                 });
             }
         }
@@ -165,12 +167,13 @@ public class BudgetService(TenantClientManager tenantClientManager) : IBudgetSer
             }
             catch (RequestFailedException ex)
             {
+                logger.LogError(ex, "Failed to create budget for subscription {SubscriptionId}", subId);
                 results.Add(new BudgetCreationResult
                 {
                     SubscriptionName = subName,
                     SubscriptionId = subId,
                     Success = false,
-                    ErrorMessage = ex.Message
+                    ErrorMessage = "An unexpected error occurred."
                 });
             }
         }

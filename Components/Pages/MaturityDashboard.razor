@@ -7,6 +7,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject NavigationManager NavigationManager
+@inject ILogger<MaturityDashboard> Logger
 
 <PageTitle>Maturity Score</PageTitle>
 
@@ -286,7 +287,8 @@
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -329,7 +331,8 @@
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Scoring failed: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Scoring failed");
+            Snackbar.Add("Scoring failed.", Severity.Error);
         }
         finally
         {

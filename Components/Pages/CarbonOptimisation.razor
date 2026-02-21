@@ -9,6 +9,7 @@
 @inject ISnackbar Snackbar
 @inject IFeatureFlagService FeatureFlagService
 @inject NavigationManager NavigationManager
+@inject ILogger<CarbonOptimisation> Logger
 
 <PageTitle>Carbon Optimisation</PageTitle>
 
@@ -363,7 +364,8 @@ else
         }
         catch (Exception ex)
         {
-            _loadError = $"Failed to load subscriptions: {ex.Message}";
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
         }
         finally
         {
@@ -404,7 +406,8 @@ else
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error scanning for carbon data: {ex.Message}", Severity.Error);
+            Logger.LogError(ex, "Error scanning for carbon data");
+            Snackbar.Add("Error scanning for carbon data.", Severity.Error);
         }
         finally
         {
