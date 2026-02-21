@@ -1,0 +1,130 @@
+@page
+@model FinOps.Pages.Account.LoginModel
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In — FinOps</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet" />
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: #F3F6FA;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+            padding: 40px;
+            width: 100%;
+            max-width: 420px;
+        }
+        h1.brand {
+            color: #0078D4;
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .subtitle {
+            color: #6B7280;
+            font-size: 0.875rem;
+            margin-bottom: 28px;
+        }
+        label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: #374151;
+            margin-bottom: 6px;
+        }
+        input[type=email], input[type=password] {
+            width: 100%;
+            border: 1px solid #D1D5DB;
+            border-radius: 4px;
+            padding: 10px 12px;
+            font-size: 0.9375rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.15s;
+            margin-bottom: 16px;
+        }
+        input[type=email]:focus, input[type=password]:focus {
+            border-color: #0078D4;
+        }
+        .field { margin-bottom: 4px; }
+        button[type=submit] {
+            width: 100%;
+            background: #0078D4;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 11px;
+            font-size: 1rem;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            margin-top: 8px;
+            transition: background 0.15s;
+        }
+        button[type=submit]:hover { background: #005A9E; }
+        .error-summary {
+            background: #FEF2F2;
+            border: 1px solid #FCA5A5;
+            border-radius: 4px;
+            padding: 10px 14px;
+            color: #B91C1C;
+            font-size: 0.875rem;
+            margin-bottom: 16px;
+        }
+        .footer-link {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.875rem;
+            color: #6B7280;
+        }
+        .footer-link a { color: #0078D4; text-decoration: none; }
+        .footer-link a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1 class="brand">FinOps Portal</h1>
+    <p class="subtitle">Sign in to your account</p>
+
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div class="error-summary">
+            @foreach (var error in ViewData.ModelState.Values.SelectMany(v => v.Errors))
+            {
+                <div>@error.ErrorMessage</div>
+            }
+        </div>
+    }
+
+    <form method="post">
+        <div class="field">
+            <label asp-for="Input.Email">Email address</label>
+            <input asp-for="Input.Email" type="email" autocomplete="username" placeholder="you@example.com" />
+        </div>
+        <div class="field">
+            <label asp-for="Input.Password">Password</label>
+            <input asp-for="Input.Password" type="password" autocomplete="current-password" placeholder="••••••••" />
+        </div>
+        <button type="submit">Sign in</button>
+    </form>
+
+    <div class="footer-link">
+        Don't have an account? <a href="/Account/Register">Register</a>
+    </div>
+</div>
+</body>
+</html>
