@@ -1,3 +1,8 @@
+
+# Notes
+
+This app is just a playground for me to try out things, yes the users.db file is checked in to github. This is an experimental app, please treat it as so.
+
 # FinOps - Azure Cost Management & Governance Platform
 
 A comprehensive Blazor Server application for managing Azure FinOps, budgets, cost analysis, security, and governance across multiple tenants. Built with .NET 10 and MudBlazor, it provides a unified dashboard for complete Azure financial and operational management across subscriptions accessible directly or via Azure Lighthouse.
@@ -9,6 +14,9 @@ A comprehensive Blazor Server application for managing Azure FinOps, budgets, co
 - [Prerequisites](#prerequisites)
 - [Getting Started](#getting-started)
 - [Authentication](#authentication)
+  - [Application Login](#application-login)
+  - [Azure Authentication](#azure-authentication)
+  - [Multi-Tenant Authentication](#multi-tenant-authentication)
 - [Complete Feature Guide](#complete-feature-guide)
   - [Home Dashboard](#1-home-dashboard)
   - [Budget Management](#2-budget-management)
@@ -20,7 +28,14 @@ A comprehensive Blazor Server application for managing Azure FinOps, budgets, co
   - [Security Recommendations](#8-security-recommendations)
   - [Service Retirements](#9-service-retirements)
   - [Logging Usage](#10-logging-usage)
+  - [Rightsizing](#11-rightsizing)
+  - [Maturity Dashboard](#12-maturity-dashboard)
+  - [Carbon Optimisation](#13-carbon-optimisation)
+  - [Private Endpoint Recommendations](#14-private-endpoint-recommendations)
+  - [Theme Management](#15-theme-management)
+  - [Admin Panel](#16-admin-panel)
 - [Multi-Tenant Support](#multi-tenant-support)
+- [Feature Flags](#feature-flags)
 - [Architecture](#architecture)
 - [Project Structure](#project-structure)
 - [Troubleshooting](#troubleshooting)
@@ -96,7 +111,7 @@ info: Microsoft.Hosting.Lifetime[14]
       Now listening on: http://localhost:5000
 ```
 
-**Access the app:** Open your browser and navigate to `https://localhost:5001` (or the port shown in your terminal).
+**Access the app:** Open your browser and navigate to `https://localhost:5001` (or the port shown in your terminal). You will be redirected to the login page.
 
 ### Stopping the Application
 
@@ -115,27 +130,42 @@ info: Microsoft.Hosting.Lifetime[14]
 
 ## Authentication
 
-### Authentication Method
+The application has two separate authentication layers: application login (who can use the app) and Azure authentication (what Azure resources the app can access).
 
-The application uses **`AzureCliCredential` exclusively** for authentication. This means:
+### Application Login
 
-✅ **What this means:**
-- You must run `az login` before starting the app
+The app uses ASP.NET Core Identity backed by a local SQLite database (`users.db`) to control who can access it. All pages require a logged-in account.
+
+**Logging in:**
+- Navigate to `https://localhost:5001` — you will be redirected to `/Account/Login`
+- Enter your email and password
+- On success you are redirected to the home dashboard
+- Sessions expire after **8 hours of inactivity**
+
+**Account requirements:**
+- Password must be at least **12 characters** and contain at least one digit and one special character
+- Accounts are locked for **15 minutes** after 5 consecutive failed login attempts
+
+**User provisioning:**
+- New accounts are created through `/Account/Register`
+- Contact your administrator to have an account created
+
+### Azure Authentication
+
+Once logged into the app, all Azure API calls use **`AzureCliCredential` exclusively**. This means:
+
+- You must run `az login` in a terminal before starting the app
 - The app inherits your Azure CLI identity and permissions
-- No additional configuration needed (no service principals, certificates, etc.)
-- Works with both personal accounts and managed identities
+- No service principals, certificates, or additional configuration needed
 
-❌ **Not used:**
-- `DefaultAzureCredential` - Intentionally disabled as it causes timeouts on some Windows configurations
-- Service Principal authentication
-- Managed Identity (unless you're running the app on Azure and logged in via `az`)
+`DefaultAzureCredential` is intentionally not used — it causes timeouts on Windows due to credential chain probing.
 
 ### Multi-Tenant Authentication
 
 When connecting to additional tenants at runtime:
 1. Your `az login` session must have access to that tenant
 2. The app creates a tenant-specific `AzureCliCredential` instance
-3. If you can't see subscriptions from a connected tenant, run: `az login --tenant <tenant-id>`
+3. If you cannot see subscriptions from a connected tenant, run: `az login --tenant <tenant-id>`
 
 ---
 
@@ -143,14 +173,14 @@ When connecting to additional tenants at runtime:
 
 ### 1. Home Dashboard
 
-**Location:** `/` (root page)
+**Location:** `/`
 
-**Purpose:** Landing page with quick navigation to main features.
+**Purpose:** Landing page with an overview of all available features and quick navigation links.
 
 **Features:**
-- Welcome screen with application overview
-- Quick links to Budget Management
-- Application status indicators
+- Feature cards for all modules with descriptions
+- Navigation links to each feature
+- Tech stack display
 - Dark mode toggle in header
 
 ---
@@ -193,10 +223,11 @@ The application provides two types of budget management:
        - `Annually` - Resets on January 1st
      - **Start Date:** When budget tracking begins (defaults to today)
      - **End Date:** When budget expires (defaults to 1 year from start)
+     - **Email Alerts (optional):** Add email addresses to receive alerts at configured thresholds
    - Click "Create"
    - Progress dialog shows results per subscription:
      - ✅ Green checkmark = Budget created successfully
-     - ❌ Red X = Failed (with error message)
+     - ❌ Red X = Failed
 
 4. **View Existing Budgets**
    - After selecting subscriptions, existing budgets load automatically in the bottom table
@@ -210,12 +241,16 @@ The application provides two types of budget management:
        - 🔴 Red (90%+) - Over or near budget
      - **Time Grain:** Monthly/Quarterly/Annually
      - **Period:** Start and end dates
-     - **Actions:** Delete button
+     - **Actions:** Edit and delete buttons
 
-5. **Delete Budget**
+5. **Edit Budget**
+   - Click the edit icon on any budget row
+   - Modify amount, end date, or email alerts
+   - Click "Update" to save changes
+
+6. **Delete Budget**
    - Click the delete icon on any budget row
    - Budget is immediately removed from Azure
-   - Success/error notification appears
 
 **Use Cases:**
 - Set monthly spending limits for development subscriptions
@@ -254,7 +289,7 @@ The application provides two types of budget management:
 
 4. **View and Manage**
    - View existing resource group budgets
-   - Delete budgets individually
+   - Edit or delete budgets individually
    - Monitor spend at resource group level
 
 **Use Cases:**
@@ -267,7 +302,7 @@ The application provides two types of budget management:
 
 ### 3. Cost Management
 
-The application provides three comprehensive cost management views:
+The application provides four comprehensive cost management views:
 
 #### 3.1 Overview Dashboard
 
@@ -301,13 +336,6 @@ The application provides three comprehensive cost management views:
    - Top resource groups by cost
    - Top Azure regions by cost
 
-**Workflow:**
-1. Navigate to Overview Dashboard
-2. Select one or more subscriptions from the table
-3. Wait for dashboard to load (shows progress indicator)
-4. View high-level metrics and per-subscription breakdowns
-5. Click on subscription names to drill into Azure Portal
-
 **Use Cases:**
 - Daily financial standup dashboard
 - Executive reporting
@@ -326,87 +354,36 @@ The application provides three comprehensive cost management views:
 
 1. **Subscription Selection Table**
    - Lists all subscriptions across connected tenants
-   - Shows: Tenant, Name, Subscription ID
    - Multi-select enabled
    - Search/filter by any column
-   - **Important:** Cost data only loads AFTER you select subscriptions (to avoid API rate limiting)
+   - Cost data only loads after you select subscriptions (to avoid API rate limiting)
 
-2. **Cost Analysis Summary**
-   - Displays after subscription selection
-   - Shows total cost for last 30 days
-   - Number of subscriptions selected
-
-3. **Interactive Charts** (Powered by ApexCharts)
+2. **Interactive Charts** (Powered by ApexCharts)
 
    **Chart 1: Daily Cost Trend with Forecast**
-   - **Type:** Area chart with line overlay
-   - **Data:**
-     - Blue area: Historical costs (last 30 days)
-     - Orange line: Forecasted costs (rest of month)
-   - **Features:**
-     - Hover to see exact daily cost
-     - Zoom and pan enabled (toolbar)
-     - Smooth curves for better visualization
-     - Datetime X-axis with automatic formatting
-     - Currency-formatted Y-axis ($X.XX)
-   - **Location:** Right side, 2/3 width on desktop
+   - Blue area: Historical costs (last 30 days)
+   - Orange line: Forecasted costs (rest of month)
+   - Hover for exact daily cost, zoom and pan enabled
 
    **Chart 2: Cost Breakdown by Service**
-   - **Type:** Donut chart
-   - **Data:** Top 8 Azure services by cost
-   - **Features:**
-     - Percentage labels on segments
-     - Center label showing total cost
-     - Legend at bottom
-     - Click legend to toggle services
-   - **Location:** Left side, 1/3 width on desktop
+   - Donut chart showing top 8 Azure services by cost
+   - Click legend to toggle services
 
    **Chart 3: Cost Breakdown by Resource Group**
-   - **Type:** Horizontal bar chart
-   - **Data:** Top 10 resource groups by cost
-   - **Features:**
-     - Sorted by cost descending
-     - Currency values displayed
-     - Green color scheme
-   - **Location:** Full width row below trend chart
+   - Horizontal bar chart showing top 10 resource groups by cost
 
-   **Chart 4: Multi-Subscription Comparison** (Conditional)
-   - **Type:** Stacked bar chart
-   - **Data:** Daily costs per subscription, stacked
-   - **Features:**
-     - Different color per subscription
-     - Legend to identify subscriptions
-     - Shows total daily spend across all selected
-   - **When shown:** Only appears if 2+ subscriptions selected
-   - **Location:** Full width row at bottom
-
-4. **Responsive Design**
-   - Desktop: Charts arranged in optimal grid layout
-   - Tablet: Charts stack vertically, full width
-   - Mobile: Single column, scrollable
-
-**Workflow:**
-1. Navigate to Cost Overview
-2. (Optional) Connect additional tenants
-3. Select one or more subscriptions from table
-4. Wait for loading indicator (chart data fetches in batches)
-5. Interact with charts:
-   - Hover for tooltips
-   - Zoom/pan on trend chart
-   - Click legend to filter
-   - Resize window to test responsive layout
+   **Chart 4: Multi-Subscription Comparison** (2+ subscriptions)
+   - Stacked bar chart showing daily costs per subscription
 
 **Use Cases:**
 - Identify cost trends and anomalies
 - Forecast end-of-month spend
 - Identify top cost drivers (services, resource groups)
 - Compare costs across multiple subscriptions
-- Generate reports for stakeholders
 
 **Rate Limiting Note:**
-- Charts load data in batches with 800ms delays
-- Total load time for 3 subscriptions: ~3-4 seconds
-- If you see "Too Many Requests" errors, wait 60 seconds and refresh
+- Charts load data in batches with 800ms delays between batches
+- If you see errors, wait 60 seconds and refresh
 
 ---
 
@@ -417,33 +394,47 @@ The application provides three comprehensive cost management views:
 **Purpose:** Single-subscription detailed cost dashboard with comprehensive metrics.
 
 **Features:**
-
-1. **Single Subscription Selection**
-   - Select ONE subscription to analyze
-   - Full dashboard loads with detailed metrics
-
-2. **Dashboard Panels:**
-   - Current month spend
-   - Forecasted month-end total
-   - Budget comparison
-   - Cost trends over time
-   - Service-level breakdowns
-   - Resource group costs
-   - Location-based costs
-
-3. **Placeholder for Charts** (Future Enhancement)
-   - Message: "Charts will be added in a future update"
+- Current month spend, forecast, budget comparison
+- Cost trends over time
+- Service-level and resource group breakdowns
+- Location-based costs
 
 **Workflow:**
-1. Navigate to Cost Dashboard
-2. Select a single subscription
-3. Wait for dashboard data to load
-4. Review detailed cost metrics
+1. Select a single subscription
+2. Wait for dashboard data to load
+3. Review detailed cost metrics
+
+---
+
+#### 3.4 Costs by Tag
+
+**Location:** `/tagging/costs`
+
+**Purpose:** Analyse and break down Azure costs by tag key and value to understand spending by business dimension (cost center, team, environment, etc.).
+
+**Step-by-Step Workflow:**
+
+1. **Select Subscriptions**
+   - Choose one or more subscriptions to analyse
+
+2. **Select a Tag Key**
+   - After subscription selection, available tag keys are loaded
+   - Pick the tag dimension to analyse (e.g., "CostCenter", "Environment")
+
+3. **Analyse Costs**
+   - Click "Analyse" to fetch cost data grouped by the selected tag value
+   - Results show spend per tag value for the current month
+
+4. **Review Breakdown**
+   - Table and chart show cost contribution per tag value
+   - Untagged resources appear as a separate "untagged" entry
+   - Use results to identify which teams or environments are driving spend
 
 **Use Cases:**
-- Deep-dive analysis for a specific subscription
-- Budget variance investigation
-- Detailed cost allocation review
+- Chargeback and showback reporting
+- Identify which cost center is over budget
+- Compare environment spend (Dev vs. Prod)
+- Validate tagging coverage
 
 ---
 
@@ -455,68 +446,45 @@ The application provides three comprehensive cost management views:
 
 **Key Concepts:**
 
-**Tags in Azure:**
-- Tags are key-value pairs (e.g., `Environment: Production`, `CostCenter: IT`)
-- Used for cost allocation, governance, and resource organization
-- Applied to resources and resource groups
-- Maximum 50 tags per resource
+Tags are key-value pairs (e.g., `Environment: Production`, `CostCenter: IT`) used for cost allocation, governance, and resource organization.
 
 **Step-by-Step Workflow:**
 
 1. **Select a Subscription**
    - Choose ONE subscription from the table
-   - Only single-select supported
 
 2. **Select Resource Groups**
-   - After subscription selection, resource groups table loads
-   - Table shows:
-     - Name
-     - Location
-     - Provisioning state
-     - **Existing tags** (hover to see all tags in tooltip)
+   - Table shows name, location, provisioning state, and existing tags
    - Select one or multiple resource groups
 
 3. **Apply Tags**
    - Click "Apply Tags" button
    - Dialog opens with tag entry form
-   - Add tags:
-     - Click "Add Tag" button
-     - Enter **Key** (e.g., "Environment")
-     - Enter **Value** (e.g., "Production")
-     - Repeat for multiple tags
-   - Validation:
-     - Keys and values cannot be empty
-     - Duplicate keys not allowed
+   - Add key/value pairs (duplicates and empty keys not allowed)
    - Click "Apply"
 
 4. **Real-Time Progress**
-   - Progress dialog opens showing:
-     - Total resources being tagged
-     - Progress bar
-     - Per-resource results:
-       - ✅ Green: Tag applied successfully
-       - ⚠️ Yellow: Skipped (resource busy, 409 conflict)
-       - ❌ Red: Failed with error message
-   - Tags are applied to:
-     - The resource group itself
-     - **All resources within the resource group**
-   - **Note:** Existing tags are NOT removed, new tags are merged
+   - Progress dialog shows per-resource results as they complete:
+     - ✅ Green: Tag applied successfully
+     - ⚠️ Yellow: Skipped (resource busy, 409 conflict)
+     - ❌ Red: Failed
+   - Tags are applied to the resource group **and all resources within it**
+   - Existing tags are NOT removed — new tags are merged
 
-5. **Progress Streaming**
-   - Results appear row-by-row as each resource is processed
-   - No need to wait for all resources to complete
-   - Can monitor progress in real-time
+5. **Remove Tags (Tab 2)**
+   - Select resource groups to scan
+   - Existing tags appear as selectable chips
+   - Select tags to remove and click "Remove Tags"
+   - Tags are removed from the resource group and all child resources
 
 **Use Cases:**
 - Apply cost center tags to all resources in a subscription
 - Tag environments (Dev, Test, Prod) for filtering
 - Add owner tags for accountability
-- Compliance tagging (e.g., "DataClassification: Confidential")
-- Bulk tagging for resource organization
+- Bulk tagging for compliance
 
 **Best Practices:**
-- Use consistent tag naming conventions (e.g., PascalCase)
-- Create a tag taxonomy before bulk tagging
+- Use consistent naming conventions (e.g., PascalCase)
 - Apply tags at resource group level first, then use inheritance policies
 - Common tags: Environment, CostCenter, Owner, Project, Application
 
@@ -526,105 +494,39 @@ The application provides three comprehensive cost management views:
 
 **Location:** `/policy`
 
-**Purpose:** Assign Azure Policy definitions to enforce governance rules, particularly tag inheritance policies.
-
-The page has **two tabs:**
-
----
+**Purpose:** Assign Azure Policy definitions to enforce governance rules, particularly tag inheritance policies. The page has two tabs.
 
 #### 5.1 Tab 1: Tag Inheritance Policy
 
 **Purpose:** Automatically inherit tags from subscriptions to child resources using Azure Policy.
 
-**What is Tag Inheritance Policy?**
-
-Azure's built-in policy `b27a0cbd-a167-4dfa-ae64-4337be671140` (called "Inherit a tag from the subscription if missing") ensures that resources automatically get tagged with subscription-level tags. This policy:
-- Runs during resource creation and updates
+Azure's built-in policy `b27a0cbd-a167-4dfa-ae64-4337be671140` ("Inherit a tag from the subscription if missing") ensures resources automatically get tagged with subscription-level tags. This policy:
 - Only adds tags if the resource doesn't already have that tag
 - Uses the "Modify" effect with automatic remediation
 - Requires a managed identity with Contributor role
 
-**Step-by-Step Workflow:**
-
-1. **Select a Subscription**
-   - Choose ONE subscription from the table
-   - Policy assignments are subscription-scoped
-
-2. **Configure Tag Inheritance**
-   - Enter **Tag Name** to inherit (e.g., "Environment")
-   - (Optional) Enter **Tag Value** (e.g., "Production")
-     - If blank, policy inherits whatever value the subscription has
-
-3. **Assign Policy**
-   - Click "Assign Policy"
-   - The service automatically:
-     1. Creates policy assignment with a system-assigned managed identity
-     2. Waits for managed identity to be created
-     3. Grants the managed identity **Contributor** role on the subscription
-     4. Enables automatic remediation
-   - Success notification appears
-
-4. **View Existing Assignments**
-   - Table shows all tag inheritance policy assignments on selected subscription:
-     - Assignment name
-     - Tag name being inherited
-     - Tag value (if specified)
-     - Assignment ID
-   - Click delete to remove policy assignment
-
-**Important Notes:**
-- **Managed Identity is Required:** The policy needs write access to apply tags
-- **Contributor Role:** Automatically granted to policy's managed identity
-- **Remediation:** Runs automatically on existing resources (not just new ones)
-- **Multiple Tags:** Create separate policy assignments for each tag you want to inherit
+**Workflow:**
+1. Select ONE subscription
+2. Enter the tag name to inherit (and optionally a specific value)
+3. Click "Assign Policy" — the service automatically:
+   - Creates the policy assignment with a system-assigned managed identity
+   - Grants the managed identity **Contributor** role on the subscription
+   - Enables automatic remediation
+4. View and delete existing policy assignments in the table below
 
 **Use Cases:**
 - Ensure all resources inherit "Environment" tag from subscription
 - Enforce cost center tagging across all resources
-- Automatic compliance tagging
 - Prevent missing tags on new resources
-
----
 
 #### 5.2 Tab 2: Remove Tags
 
 **Purpose:** Bulk remove specific tags from resource groups and their child resources.
 
-**Step-by-Step Workflow:**
-
-1. **Select Resource Groups**
-   - After selecting a subscription, choose resource groups to clean up
-
-2. **View Available Tags**
-   - After selecting resource groups, app scans all tags across selected groups
-   - Tags appear as chips in the UI
-
-3. **Select Tags to Remove**
-   - Click on tag chips to select tags for removal
-   - Multiple tags can be selected
-   - Only tags that exist on selected resource groups are shown
-
-4. **Remove Tags**
-   - Click "Remove Tags" button
-   - Confirmation dialog appears
-   - Progress dialog shows real-time removal:
-     - Resource groups processed
-     - Resources within each group
-     - Success/failure per resource
-   - Tags are removed from:
-     - Resource group itself
-     - All resources within the resource group
-
-**Use Cases:**
-- Clean up obsolete tags after project completion
-- Remove incorrect tags applied by mistake
-- Standardize tag taxonomy (remove old naming conventions)
-- Compliance cleanup (remove sensitive tags)
-
-**Best Practices:**
-- Review selected tags carefully before removing
-- Consider backing up tag data before bulk removal
-- Remove tags during maintenance windows (some resources may be locked)
+**Workflow:**
+1. Select resource groups
+2. Select tag chips to remove
+3. Confirm removal and monitor real-time progress
 
 ---
 
@@ -634,14 +536,6 @@ Azure's built-in policy `b27a0cbd-a167-4dfa-ae64-4337be671140` (called "Inherit 
 
 **Purpose:** Identify Azure resources that are no longer in use but still incurring costs.
 
-**What are Orphaned Resources?**
-
-Orphaned resources are Azure resources that:
-- Have no active connections or dependencies
-- Are not being actively used
-- Continue to incur costs
-- Can typically be safely deleted
-
 **Common Orphaned Resource Types:**
 
 | Resource Type | Why It's Orphaned |
@@ -649,70 +543,31 @@ Orphaned resources are Azure resources that:
 | **Unattached Disks** | VM deleted but disk remains |
 | **Unused NICs** | Network interface not attached to VM |
 | **Orphaned Public IPs** | IP address not associated with any resource |
-| **Empty Resource Groups** | No resources inside, just overhead |
+| **Empty Resource Groups** | No resources inside |
 | **Stopped/Deallocated VMs** | VM powered off for extended period |
-| **Unused Load Balancers** | No backend pools configured |
-| **Expired Snapshots** | Old backups no longer needed |
 
-**Step-by-Step Workflow:**
+**Workflow:**
+1. Select one or more subscriptions
+2. Click "Scan"
+3. Review results table showing resource name, type, resource group, location, reason, estimated monthly cost, and a link to Azure Portal
+4. Navigate to Azure Portal links to review and delete confirmed orphans
 
-1. **Select Subscriptions**
-   - Choose one or more subscriptions to scan
-   - Use search to filter subscriptions
-
-2. **Scan for Orphaned Resources**
-   - Click "Scan" button
-   - Progress indicator shows scanning status
-   - Wait for scan to complete (may take 30-60 seconds per subscription)
-
-3. **Review Results**
-   - Summary chips show:
-     - Total orphaned resources found
-     - Breakdown by resource type
-     - Estimated monthly cost savings (if available)
-
-4. **Results Table**
-   - Detailed table showing:
-     - **Resource Name:** Name of the orphaned resource
-     - **Resource Type:** Type (disk, NIC, IP, etc.)
-     - **Resource Group:** Parent resource group
-     - **Location:** Azure region
-     - **Reason:** Why it's considered orphaned
-     - **Monthly Cost:** Estimated monthly cost (if available)
-     - **Azure Portal Link:** Click to view in Azure Portal
-
-5. **Take Action**
-   - Links open Azure Portal for each resource
-   - Manually review each resource before deleting
-   - Delete resources you confirm are no longer needed
-   - Track cost savings
-
-**Scan Logic:**
-
-The scan uses Azure Resource Graph queries to identify:
+**Scan Logic (Resource Graph queries):**
 - Disks: `properties.diskState == 'Unattached'`
 - NICs: `properties.virtualMachine == null`
 - Public IPs: `properties.ipConfiguration == null`
 - Empty Resource Groups: `resourceCount == 0`
-- Deallocated VMs: `powerState == 'VM deallocated'` for 30+ days
+- Deallocated VMs: `powerState == 'VM deallocated'`
 
 **Use Cases:**
 - Monthly cost optimization reviews
 - Post-project cleanup
 - Reduce cloud waste
-- Compliance cleanup (remove unused resources)
-- Subscription cost reduction initiatives
 
 **Best Practices:**
-- Schedule monthly orphaned resource scans
-- Review before deleting (confirm resource is truly unused)
+- Review before deleting — confirm the resource is truly unused
 - Delete disks carefully (check for backups/snapshots first)
-- Document deletion reasons for audit trail
-- Keep orphaned resources for 7-30 days before deletion (safety buffer)
-
-**Estimated Savings:**
-- Typical findings: 5-15% of total subscription costs
-- Common savings: $500-$5000/month per subscription for large estates
+- Typical savings: 5-15% of total subscription costs
 
 ---
 
@@ -722,112 +577,28 @@ The scan uses Azure Resource Graph queries to identify:
 
 **Purpose:** View Azure Advisor recommendations across Cost, Performance, Security, Reliability, and Operational Excellence categories.
 
-**What is Azure Advisor?**
+**Workflow:**
+1. Select one or more subscriptions
+2. Click "Get Recommendations"
+3. Review **Advisor Scores** (out of 100) per category:
+   - 🟢 80-100: Good
+   - 🟡 60-79: Needs Attention
+   - 🔴 0-59: Critical
+4. Review the recommendations table showing category, impact (High/Medium/Low), title, impacted resource, and potential savings
+5. Filter by category and sort by column headers
+6. Follow the "Action" guidance for each recommendation
 
-Azure Advisor is Microsoft's built-in cloud optimization tool that analyzes your resource configuration and usage to provide recommendations across five categories:
-- 💰 **Cost:** Reduce spending
-- ⚡ **Performance:** Improve speed and responsiveness
-- 🛡️ **Security:** Close security vulnerabilities
-- 🔄 **Reliability:** Improve uptime and resilience
-- ⚙️ **Operational Excellence:** Process and workflow improvements
-
-**Step-by-Step Workflow:**
-
-1. **Select Subscriptions**
-   - Choose one or more subscriptions to analyze
-   - Multi-select supported
-
-2. **Get Recommendations**
-   - Click "Get Recommendations" button
-   - Progress dialog appears while fetching
-   - Wait for completion (10-30 seconds per subscription)
-
-3. **Review Advisor Scores**
-   - Summary section shows **Advisor Scores** for each category:
-     - Score out of 100 (higher is better)
-     - Color-coded indicators:
-       - 🟢 80-100: Good
-       - 🟡 60-79: Needs Attention
-       - 🔴 0-59: Critical
-   - Categories:
-     - Cost Optimization
-     - Performance
-     - Security
-     - Reliability
-     - Operational Excellence
-
-4. **Review Recommendations Table**
-   - Detailed table showing all recommendations:
-     - **Category:** Cost/Performance/Security/Reliability/Operational
-     - **Impact:** High/Medium/Low
-     - **Title:** Brief description
-     - **Impacted Resource:** Resource name and type
-     - **Resource Group:** Parent resource group
-     - **Recommendation:** Detailed explanation of the issue
-     - **Action:** What to do to resolve
-     - **Potential Savings:** Monthly cost savings (for cost recommendations)
-
-5. **Filter and Sort**
-   - Use search box to filter recommendations
-   - Click column headers to sort
-   - Filter by category using chips
-
-6. **Take Action**
-   - Click on resource names to open in Azure Portal
-   - Follow "Action" guidance to implement recommendation
-   - Mark recommendations as dismissed in Azure Portal once resolved
-
-**Recommendation Categories in Detail:**
-
-**💰 Cost Recommendations:**
-- Right-size or shutdown underutilized VMs
-- Delete unattached disks
-- Reserve instances for long-running workloads
-- Use Azure Hybrid Benefit
-- Remove unused ExpressRoute circuits
-- **Potential Savings:** Shown per recommendation
-
-**⚡ Performance Recommendations:**
-- Upgrade to faster storage tiers
-- Add more VM cores/memory
-- Use availability zones
-- Configure connection pooling
-- Optimize database DTUs
-
-**🛡️ Security Recommendations:**
-- Enable multi-factor authentication
-- Restrict network access (NSG rules)
-- Enable disk encryption
-- Update vulnerable software versions
-- Enable Azure Security Center
-
-**🔄 Reliability Recommendations:**
-- Use availability sets/zones
-- Enable backup
-- Implement geo-redundancy
-- Configure health probes
-- Use managed disks
-
-**⚙️ Operational Excellence:**
-- Implement tagging strategy
-- Use resource naming conventions
-- Enable diagnostics/logging
-- Implement CI/CD pipelines
-- Use Azure Policy for governance
+**Categories:**
+- 💰 **Cost:** Right-size VMs, delete unused resources, reserve instances
+- ⚡ **Performance:** Upgrade storage tiers, scale resources
+- 🛡️ **Security:** Enable MFA, restrict network access, enable encryption
+- 🔄 **Reliability:** Use availability zones, enable backup, geo-redundancy
+- ⚙️ **Operational Excellence:** Tagging, naming conventions, diagnostics
 
 **Use Cases:**
 - Monthly optimization reviews
-- Pre-production deployment checklist
 - Security posture assessment
 - Cost reduction initiatives
-- Compliance preparation
-
-**Best Practices:**
-- Review recommendations monthly
-- Prioritize High impact recommendations
-- Start with Cost recommendations for quick wins
-- Address Security recommendations immediately
-- Track savings achieved
 
 ---
 
@@ -837,106 +608,29 @@ Azure Advisor is Microsoft's built-in cloud optimization tool that analyzes your
 
 **Purpose:** View Azure Security Center (Defender for Cloud) security recommendations and compliance posture.
 
-**What are Security Recommendations?**
+**Workflow:**
+1. Select one or more subscriptions
+2. Click "Scan"
+3. Review security score and breakdown by category (Identity, Networking, Compute, Data)
+4. Review the recommendations table:
+   - **Severity:** Critical / High / Medium / Low
+   - **Title, Category, Affected Resources, Description, Remediation Steps**
+5. Filter by severity chip to focus on critical items
+6. Click "View in Portal" links to remediate
 
-Azure Security Center continuously assesses your Azure resources against security best practices and compliance standards (CIS, PCI-DSS, etc.). Recommendations are actionable security improvements.
-
-**Step-by-Step Workflow:**
-
-1. **Select Subscriptions**
-   - Choose one or more subscriptions to assess
-   - Multi-select supported
-
-2. **Scan for Recommendations**
-   - Click "Scan" button
-   - Progress dialog appears
-   - Wait for scan to complete (20-40 seconds per subscription)
-
-3. **Review Security Score**
-   - Summary section shows:
-     - **Overall Security Score:** Percentage (0-100%)
-     - **Secure Score:** Points out of maximum possible
-     - **Breakdown by Category:**
-       - Identity and Access
-       - Data and Storage
-       - Networking
-       - Compute and Apps
-       - DevOps Security
-
-4. **Review Recommendations Table**
-   - Detailed table showing:
-     - **Severity:** Critical/High/Medium/Low
-     - **Title:** Recommendation name
-     - **Category:** Security domain
-     - **Affected Resources:** Count of resources impacted
-     - **Description:** Detailed explanation (supports HTML with links)
-     - **Remediation Steps:** How to fix
-     - **Azure Portal Link:** Direct link to recommendation
-
-5. **Severity Filtering**
-   - Filter by severity using chips:
-     - 🔴 Critical
-     - 🟠 High
-     - 🟡 Medium
-     - 🟢 Low
-
-6. **Take Action**
-   - Click "View in Portal" to see full details
-   - Follow remediation steps
-   - Mark as resolved once fixed
-   - Re-scan to verify remediation
-
-**Common Security Recommendations:**
-
-**Critical Severity:**
+**Common Critical/High Recommendations:**
 - Enable MFA for subscription owners
 - Apply system updates to VMs
-- Fix vulnerabilities in security configuration
-- Enable disk encryption
-- Remediate SQL vulnerabilities
-
-**High Severity:**
 - Restrict management ports (RDP/SSH)
+- Enable disk encryption
 - Enable network security groups
-- Install endpoint protection
-- Enable SQL auditing
-- Configure web application firewall
 
-**Medium Severity:**
-- Enable diagnostic logging
-- Configure security contact email
-- Implement network segmentation
-- Enable storage encryption
-- Configure backup
-
-**Low Severity:**
-- Apply tags for governance
-- Enable Azure Policy
-- Configure alerts
-- Implement role-based access control
-
-**Use Cases:**
-- Security compliance audits (SOC 2, ISO 27001, PCI-DSS)
-- Pre-deployment security validation
-- Incident response and remediation
-- Security posture improvement
-- Regulatory compliance reporting
-
-**Best Practices:**
-- Scan weekly for new recommendations
-- Address Critical and High severity first
-- Document remediation decisions
-- Implement Azure Policy to prevent recurrence
-- Use Security Center's automated remediation when available
-- Track security score improvements over time
-
-**Integration with Compliance Frameworks:**
-- The recommendations align with:
-  - CIS Microsoft Azure Foundations Benchmark
-  - PCI-DSS v3.2.1
-  - ISO 27001:2013
-  - NIST SP 800-53 R4
-  - Azure Security Benchmark
+**Compliance Frameworks Covered:**
+- CIS Microsoft Azure Foundations Benchmark
+- PCI-DSS v3.2.1
+- ISO 27001:2013
+- NIST SP 800-53 R4
+- Azure Security Benchmark
 
 ---
 
@@ -946,75 +640,24 @@ Azure Security Center continuously assesses your Azure resources against securit
 
 **Purpose:** Identify Azure services and features scheduled for retirement that are currently in use in your subscriptions.
 
-**What are Service Retirements?**
-
-Microsoft regularly retires Azure services, features, and API versions. Service Retirements are:
-- Azure services being deprecated
-- Features being removed
-- API versions reaching end-of-life
-- Resources that need migration to newer services
-
-**Why This Matters:**
-- Retired services stop working after retirement date
-- Can cause application downtime if not addressed
-- Security vulnerabilities may not be patched
-- Compliance issues if using unsupported services
-
-**Step-by-Step Workflow:**
-
-1. **Select Subscriptions**
-   - Choose one or more subscriptions to scan
-
-2. **Scan for Retirements**
-   - Click "Scan" button
-   - Progress dialog appears
-   - Scan checks Azure Service Health API for retirement notices
-
-3. **Review Results**
-   - Summary chips show:
-     - Total services being retired
-     - Breakdown by retirement timeline:
-       - 🔴 Retiring within 30 days
-       - 🟡 Retiring within 90 days
-       - 🟢 Retiring within 1 year
-
-4. **Results Table**
-   - Detailed table showing:
-     - **Service Name:** Name of retiring service/feature
-     - **Current Version:** Version you're using
-     - **Retirement Date:** When service stops working
-     - **Impact:** Description of what will happen
-     - **Affected Resources:** List of your resources using this service
-     - **Migration Path:** Recommended replacement service
-     - **Documentation Link:** Microsoft migration guide
-
-5. **Priority Actions**
-   - Focus on services retiring within 30 days first
-   - Plan migration for 90-day retirements
-   - Research replacements for 1-year retirements
-
-**Common Service Retirements:**
-
-| Retiring Service | Replacement | Typical Retirement Timeline |
-|-----------------|-------------|---------------------------|
-| Classic VMs | Azure Resource Manager VMs | 1-2 years |
-| Cloud Services (classic) | Azure App Service / Container Apps | 1-2 years |
-| Classic Storage Accounts | ARM Storage Accounts | 1-2 years |
-| Old API versions | Latest API version | 6-12 months |
-| Deprecated SKUs | New SKUs | 3-6 months |
+**Workflow:**
+1. Select one or more subscriptions
+2. Click "Scan"
+3. Review results grouped by retirement timeline:
+   - 🔴 Retiring within 30 days
+   - 🟡 Retiring within 90 days
+   - 🟢 Retiring within 1 year
+4. Each row shows: service name, retirement date, description, affected resources, and migration path
+5. Click the expand icon to see a full list of affected resources with Portal links
 
 **Use Cases:**
 - Quarterly retirement reviews
-- Pre-deployment compatibility checks
-- Technical debt reduction
 - Avoid surprise downtime
-- Compliance and support requirements
+- Technical debt reduction
 
 **Best Practices:**
-- Scan quarterly for new retirement notices
 - Create migration plans immediately for <90 day retirements
 - Test migrations in dev/test environments first
-- Document migration steps for team knowledge
 - Subscribe to Azure Service Health alerts
 
 ---
@@ -1023,16 +666,7 @@ Microsoft regularly retires Azure services, features, and API versions. Service 
 
 **Location:** `/logging-usage`
 
-**Purpose:** Analyze Log Analytics workspace usage and costs to optimize logging spend.
-
-**What is Log Analytics?**
-
-Log Analytics workspaces store logs and telemetry from:
-- Azure Monitor
-- Application Insights
-- Virtual machine logs
-- Container insights
-- Security Center
+**Purpose:** Analyse Log Analytics workspace usage and costs to optimise logging spend.
 
 **Why Monitor Logging Usage?**
 
@@ -1040,87 +674,206 @@ Log Analytics costs are based on data ingestion (GB) and retention:
 - First 5 GB/month free
 - Pay-as-you-go: ~$2.76/GB ingested
 - High-volume applications can generate 100s of GB/day
-- Logs older than 30 days incur retention costs
 
-**Step-by-Step Workflow:**
+**Workflow:**
+1. Select one or more subscriptions
+2. Click "Get Workspaces" to enumerate all workspaces
+3. Review the workspace list (name, resource group, location, SKU, retention days)
+4. Select one or more workspaces and click "Query Usage"
+5. Review per-workspace metrics:
+   - Daily ingestion trend (30-day chart)
+   - Top data tables consuming most ingestion
+   - Estimated monthly cost
+   - Optimisation recommendations
 
-1. **Select Subscriptions**
-   - Choose one or more subscriptions containing Log Analytics workspaces
+**Common Optimisation Strategies:**
+- Reduce retention from 90 to 30 days (free tier) if compliance allows
+- Filter verbose/debug logs at source via data collection rules
+- Switch to Capacity Reservation pricing at >100 GB/day (saves ~25-30%)
+- Disable diagnostics for non-critical resources
 
-2. **Get Workspaces**
-   - Click "Get Workspaces" button
-   - App enumerates all workspaces in selected subscriptions
+---
 
-3. **Review Workspace List**
-   - Table shows all workspaces:
-     - **Workspace Name**
-     - **Resource Group**
-     - **Location**
-     - **SKU/Pricing Tier:** Free/PerGB2018/CapacityReservation
-     - **Retention Days:** How long logs are kept
+### 11. Rightsizing
 
-4. **Analyze Usage** (Per Workspace)
-   - Click on a workspace to see detailed metrics:
-     - **Daily Ingestion:** GB ingested per day
-     - **Ingestion Trend:** 30-day chart
-     - **Top Tables:** Tables consuming most data
-     - **Estimated Monthly Cost:** Based on current usage
-     - **Retention Cost:** Cost to store logs beyond 30 days
+**Location:** `/rightsizing`
 
-5. **Top Data Tables**
-   - Table breakdown showing:
-     - Table name (e.g., ContainerLog, Syslog, SecurityEvent)
-     - Daily ingestion volume (GB/day)
-     - Percentage of total ingestion
-     - Estimated monthly cost
+**Purpose:** Identify Virtual Machines and compute resources that are oversized or underutilised, with recommendations to right-size or shut down to reduce costs.
 
-6. **Optimization Recommendations**
-   - Based on usage patterns, recommendations may include:
-     - "Reduce retention from 90 to 30 days to save $XXX/month"
-     - "Consider Capacity Reservation pricing tier"
-     - "Filter verbose logs in ContainerLog table"
-     - "Disable diagnostic logs for non-production VMs"
+**Workflow:**
+1. Select one or more subscriptions
+2. Click "Scan for Recommendations"
+3. Review the recommendations table:
+   - **Resource Name and Type**
+   - **Current SKU/Size**
+   - **Recommended SKU/Size**
+   - **Estimated Monthly Savings**
+   - **Impact:** High/Medium/Low
+   - **Justification:** Why the recommendation was made
 
-**Common Cost Optimization Strategies:**
+4. Click resource names to open in Azure Portal and action the recommendation
 
-1. **Reduce Retention Period:**
-   - Default: 30 days (free)
-   - Only extend retention if required for compliance
-   - Archive old logs to cheaper storage
-
-2. **Filter Verbose Logs:**
-   - Exclude debug/verbose logs in production
-   - Use data collection rules to filter at source
-   - Only collect Warning and Error severity
-
-3. **Optimize Container Logging:**
-   - Container logs are often the highest volume
-   - Reduce stdout/stderr verbosity
-   - Use structured logging (JSON)
-
-4. **Right-Size Diagnostic Settings:**
-   - Don't collect metrics you don't use
-   - Disable diagnostics for non-critical resources
-   - Sample metrics instead of full collection
-
-5. **Use Capacity Reservations:**
-   - If ingesting >100 GB/day, switch to Capacity Reservation
-   - Can save 25-30% vs. pay-as-you-go
-   - Available in 100/200/300/400/500 GB/day tiers
+**Data Source:** Azure Advisor Cost recommendations filtered for rightsizing and shutdown suggestions.
 
 **Use Cases:**
-- Monthly logging cost review
-- Budget forecasting
-- Identify noisy log sources
-- Optimize container logging
-- Compliance retention planning
+- Monthly cost optimisation reviews
+- Post-deployment right-sizing
+- Identify idle or consistently underutilised VMs
 
 **Best Practices:**
-- Review top tables monthly
-- Set alerts for unexpected usage spikes
-- Archive logs to Azure Storage for long-term retention
-- Use workspace caps to prevent runaway costs
-- Document retention requirements before reducing
+- Check utilisation metrics before acting (CPU, memory, disk)
+- Right-size in dev/test first
+- Schedule resizing during maintenance windows
+- Consider Reserved Instances after right-sizing
+
+> **Note:** This feature is controlled by a feature flag and may need to be enabled in the Admin panel.
+
+---
+
+### 12. Maturity Dashboard
+
+**Location:** `/maturity`
+
+**Purpose:** Assess the cloud governance maturity of your Azure subscriptions across multiple dimensions, producing a scored maturity report.
+
+**Maturity Dimensions Assessed:**
+- **Tagging** — Percentage of resources with required tags
+- **Budgets** — Whether budgets are configured
+- **Cost Waste** — Orphaned/idle resources present
+- **Reservations** — Use of reserved instances for predictable workloads
+
+**Workflow:**
+1. Select one or more subscriptions
+2. Click "Score Selected"
+3. Progress indicator shows scoring in real time per subscription
+4. Review the maturity scorecard:
+   - Overall score per subscription
+   - Breakdown by category (colour-coded)
+   - Specific findings that reduce the score
+5. Use findings as a prioritised action list
+
+**Use Cases:**
+- FinOps capability assessment
+- Identifying governance gaps across a subscription estate
+- Reporting to leadership on cloud governance maturity
+- Tracking improvements over time
+
+> **Note:** This feature is controlled by a feature flag and may need to be enabled in the Admin panel.
+
+---
+
+### 13. Carbon Optimisation
+
+**Location:** `/carbon`
+
+**Purpose:** Estimate the carbon footprint of your Azure Virtual Machine estate by region, helping identify opportunities to reduce environmental impact by migrating to lower-carbon regions or right-sizing VMs.
+
+**How Carbon Estimates Work:**
+- Carbon intensity (gCO₂/kWh) varies by Azure region based on the energy mix used
+- Estimates are based on VM CPU core count and regional intensity data
+- All figures are estimates — Azure does not publish per-VM carbon data
+
+**Workflow:**
+1. Select one or more subscriptions
+2. Click "Scan for Carbon Data"
+3. Review results:
+   - **Per-VM estimates:** VM name, region, CPU cores, estimated kg CO₂/month
+   - **Region summary:** Total VMs, total cores, total CO₂ estimate, intensity per core
+   - **Carbon intensity map:** Relative intensity by region (green = low carbon, red = high carbon)
+4. Identify high-carbon regions and consider migration to greener alternatives
+
+**Use Cases:**
+- Environmental impact reporting
+- ESG/sustainability metrics
+- Identifying regions with high carbon intensity for migration planning
+- Comparing carbon cost of scaling up vs. right-sizing
+
+> **Note:** This feature is controlled by a feature flag and may need to be enabled in the Admin panel.
+
+---
+
+### 14. Private Endpoint Recommendations
+
+**Location:** `/private-endpoints` (via navigation)
+
+**Purpose:** Identify Azure services that are currently exposed via public endpoints and would benefit from Private Endpoint configuration to improve security posture and potentially reduce egress costs.
+
+**Workflow:**
+1. Select one or more subscriptions
+2. Click "Scan for Recommendations"
+3. Review the recommendations table:
+   - **Resource Name and Type** (e.g., Storage Account, Key Vault, SQL Server)
+   - **Service Type**
+   - **Access Pattern**
+   - **Benefit:** Why a private endpoint is recommended
+   - **Portal Link:** Direct link to configure in Azure Portal
+
+**Use Cases:**
+- Security hardening (remove public exposure)
+- Compliance requirements (e.g., PCI-DSS, HIPAA)
+- Reduce data egress costs for high-traffic services
+- Network architecture reviews
+
+> **Note:** This feature is controlled by a feature flag and may need to be enabled in the Admin panel.
+
+---
+
+### 15. Theme Management
+
+**Location:** `/themes`
+
+**Purpose:** Customise the application's visual appearance by selecting from three built-in themes.
+
+**Available Themes:**
+
+| Theme | Description |
+|-------|-------------|
+| **Azure Blue** | Clean Microsoft Azure-inspired colour palette with blue accents |
+| **MissionControl** | High-contrast dark theme suited for NOC/operations dashboards |
+| **DarkFinance** | Dark mode with finance-inspired green accents |
+
+**Workflow:**
+1. Navigate to Themes via the side navigation
+2. Click a theme card to apply it immediately
+3. The theme is persisted across sessions (saved to `theme.json`)
+4. The dark mode toggle in the top bar continues to work within any theme
+
+> **Note:** This feature is controlled by a feature flag and may need to be enabled in the Admin panel.
+
+---
+
+### 16. Admin Panel
+
+**Location:** `/admin`
+
+**Purpose:** Control which features are visible in the navigation and throughout the application using feature flags.
+
+**Available Feature Flags:**
+
+| Flag | Controls |
+|------|---------|
+| **Budgets** | Subscription and resource group budget pages |
+| **Cost Management** | Cost Overview, Cost Dashboard, Overview Dashboard |
+| **Tagging** | Resource tagging and Costs by Tag pages |
+| **Policy** | Policy management page |
+| **Orphaned Resources** | Orphaned resource scanner |
+| **Advisor** | Azure Advisor recommendations |
+| **Security** | Security recommendations page |
+| **Private Endpoints** | Private endpoint recommendations |
+| **Service Retirements** | Service retirement scanner |
+| **Logging Usage** | Log Analytics usage analysis |
+| **Rightsizing** | VM rightsizing recommendations |
+| **Maturity** | Maturity dashboard |
+| **Carbon** | Carbon optimisation page |
+| **Themes** | Theme selection page |
+
+**Workflow:**
+1. Navigate to Admin in the side navigation
+2. Toggle feature flags on or off using the switches
+3. Click "Save" to persist changes
+4. Changes take effect immediately for all connected users — the navigation updates in real time
+
+> **Access:** The Admin panel requires an admin-role account. Contact your administrator if you need access.
 
 ---
 
@@ -1138,7 +891,7 @@ The application supports accessing Azure resources across multiple tenants using
 **How It Works in FinOps:**
 1. On app startup, your home tenant is detected automatically
 2. All Lighthouse-delegated subscriptions load in subscription tables
-3. No configuration needed - works out of the box
+3. No configuration needed — works out of the box
 
 ### Method 2: Connect Tenant (Runtime Connection)
 
@@ -1147,43 +900,49 @@ The application supports accessing Azure resources across multiple tenants using
 **How to Connect:**
 
 1. **Get Tenant ID:**
-   - Login to Azure Portal
-   - Navigate to Azure Active Directory
-   - Copy "Tenant ID" from Overview page
+   - Login to Azure Portal → Azure Active Directory → copy the "Tenant ID"
 
 2. **Connect in FinOps:**
    - Click "Connect Tenant" button (appears on most pages)
    - Enter tenant GUID
    - Click "Connect"
+   - If your `az login` session doesn't yet have credentials for this tenant, a browser window opens automatically for you to complete login
 
 3. **Verify Access:**
    - Subscriptions from connected tenant appear in tables
-   - If no subscriptions appear, verify you have access via: `az login --tenant <tenant-id>`
+   - If no subscriptions appear: `az login --tenant <tenant-id>`
 
 4. **Disconnect:**
    - Click the X on the tenant chip in the tenant bar
-   - Subscriptions from that tenant are removed from view
 
 **Tenant Bar (Top of Most Pages):**
 - 🟦 Blue chip: Home tenant (default)
 - 🟪 Purple chips: Connected tenants
 - Shows tenant display name if available, otherwise tenant GUID
 
-**Use Cases:**
-- MSPs managing multiple customer tenants
-- Enterprises with multiple Azure AD tenants
-- Consultants with guest access to client tenants
-- Cross-organization projects
+**Persistence:**
+- Tenant connections are **per-session** (scoped to your browser tab)
+- Connections are lost when you close the browser tab
+- Reconnect each session as needed
 
 **Permissions Required:**
 - Guest user account in target tenant
 - Appropriate RBAC roles on subscriptions in that tenant
 - `az login --tenant <tenant-id>` must succeed
 
-**Persistence:**
-- Tenant connections are **per-session** (scoped to your browser tab)
-- Connections are lost when you close the browser tab
-- Reconnect each session as needed
+---
+
+## Feature Flags
+
+Feature flags control which pages and navigation items are visible. They are managed by an admin in the [Admin Panel](#16-admin-panel) and stored in `featureflags.json`.
+
+**Behaviour:**
+- Disabled features are hidden from the navigation menu
+- All flags default to **enabled** on first run
+- Changes apply immediately to all connected users
+- Flag state persists across application restarts
+
+If a page appears missing from the navigation, check the Admin panel to ensure its flag is enabled.
 
 ---
 
@@ -1198,18 +957,19 @@ The application supports accessing Azure resources across multiple tenants using
 | **UI Library** | MudBlazor | 8.15.0 |
 | **Charts** | Blazor-ApexCharts | 4.0.0 |
 | **Azure SDK** | Azure.ResourceManager | 1.13.2 |
-| **Authentication** | Azure.Identity | 1.17.1 |
+| **Authentication (Azure)** | Azure.Identity | 1.17.1 |
+| **Authentication (App)** | ASP.NET Core Identity | .NET 10 |
+| **Database** | SQLite via EF Core | 9.0.0 |
 | **Cost Management** | Azure.ResourceManager.CostManagement | 1.0.2 |
 | **Budgets** | Azure.ResourceManager.Consumption | 1.0.1 |
 | **Advisor** | Azure.ResourceManager.Advisor | 1.0.0-beta.5 |
 | **Log Analytics** | Azure.ResourceManager.OperationalInsights | 1.3.1 |
 | **Resource Graph** | Azure.ResourceManager.ResourceGraph | 1.1.0 |
+| **Monitor Query** | Azure.Monitor.Query | 1.5.0 |
 
 ### Service Architecture
 
-All services are registered as **Scoped** in the dependency injection container, meaning each Blazor SignalR circuit (user session) gets its own service instances.
-
-**Core Services:**
+All services are registered as **Scoped** in the dependency injection container, meaning each Blazor SignalR circuit (user session) gets its own service instances. `IFeatureFlagService` and `IThemeService` are **Singleton** (shared across all sessions).
 
 ```
 TenantClientManager (scoped)
@@ -1217,25 +977,28 @@ TenantClientManager (scoped)
 ├── Home tenant client (created once at startup)
 └── Connected tenant clients (created on-demand)
 
+ITenantConnectionService (scoped)
+└── Handles az login fallback for new tenant connections
+
 IAzureSubscriptionService (scoped)
 ├── Enumerates subscriptions across all tenants
 └── Filters by state, tenant, name
 
 IBudgetService (scoped)
-├── Create/delete budgets
+├── Create/edit/delete budgets
 ├── Get budgets for subscriptions/resource groups
 └── Uses Azure Consumption API
 
 ICostAnalysisService (scoped)
 ├── Cost queries (historical data)
 ├── Cost forecasts
-├── Dimensional breakdowns (service, resource group, location)
-└── Uses Azure Cost Management API
+├── Dimensional breakdowns (service, resource group, location, tag)
+└── Exponential backoff retry for 429 rate limiting
 
 IResourceTaggingService (scoped)
 ├── Apply tags to resource groups and resources
 ├── Remove tags with progress callbacks
-└── Real-time operation results
+└── Real-time operation results via Action<TagOperationResult>
 
 IPolicyService (scoped)
 ├── Assign tag inheritance policies
@@ -1245,9 +1008,8 @@ IPolicyService (scoped)
 
 IAdvisorService (scoped)
 ├── Get Advisor recommendations
-├── Calculate Advisor scores
-├── Potential cost savings calculation
-└── Uses Azure Advisor API
+├── Calculate Advisor scores per category
+└── Potential cost savings calculation
 
 IOrphanedResourceService (scoped)
 ├── Identify unattached disks, NICs, IPs
@@ -1257,33 +1019,44 @@ IOrphanedResourceService (scoped)
 
 ISecurityRecommendationService (scoped)
 ├── Get Security Center recommendations
-├── Calculate secure scores
-└── Uses Azure Security Center API
+└── Calculate secure scores
 
 IServiceRetirementService (scoped)
-├── Query Azure Service Health
-├── Identify retiring services
+├── Query Azure Service Health / Advisor for retirement notices
 └── Match against deployed resources
 
 ILogAnalyticsService (scoped)
 ├── Enumerate Log Analytics workspaces
-├── Query usage metrics
-├── Calculate costs
-└── Uses Azure Monitor Query API
+├── Query usage metrics via Azure Monitor Query
+└── Calculate costs and ingestion trends
+
+IRightsizingService (scoped)
+└── Advisor-based VM rightsizing and shutdown recommendations
+
+IMaturityService (scoped)
+└── Multi-dimension maturity scoring with progress callbacks
+
+ICarbonService (scoped)
+├── VM carbon estimates by region
+└── Regional carbon intensity data
+
+IPrivateEndpointService (scoped)
+└── Identify services that should use private endpoints
+
+IFeatureFlagService (singleton)
+├── Feature flag state (which pages are enabled)
+├── Persists to featureflags.json
+└── OnFlagsChanged event for real-time nav updates
+
+IThemeService (singleton)
+├── Theme selection (AzureBlue, MissionControl, DarkFinance)
+├── Persists to theme.json
+└── OnThemeChanged event for real-time theme updates
 ```
 
 ### TenantClientManager (Core Service)
 
 **Purpose:** Centralized management of `ArmClient` instances for multi-tenant scenarios.
-
-**Key Responsibilities:**
-1. Create and cache `ArmClient` for home tenant
-2. Create and cache `ArmClient` for connected tenants
-3. Provide `GetClientForTenant(tenantId)` method
-4. Track connected tenant IDs
-5. Dispose of clients when disconnected
-
-**Implementation:**
 
 ```csharp
 public class TenantClientManager
@@ -1295,44 +1068,21 @@ public class TenantClientManager
     {
         // If home tenant, return home client
         // If connected tenant, return from cache or create new
-        // Create uses new AzureCliCredential(new AzureCliCredentialOptions { TenantId = tenantId })
+        // New clients use AzureCliCredential with TenantId option
     }
 }
 ```
-
-### Data Flow Example: Creating a Budget
-
-1. **User Action:** User selects 3 subscriptions and clicks "Create Budget"
-2. **UI Layer:** `Budgets.razor` calls `BudgetService.CreateBudgetAsync()`
-3. **Service Layer:**
-   - `BudgetService` receives subscription list
-   - For each subscription:
-     - Gets tenant ID from subscription
-     - Calls `TenantClientManager.GetClientForTenant(tenantId)`
-     - Uses returned `ArmClient` to create budget via Azure SDK
-     - Returns `BudgetCreationResult` with success/failure
-4. **UI Update:** Results displayed in dialog with color-coded status
 
 ### Render Mode: Interactive Server
 
 The application uses **global Interactive Server** render mode:
 
-**App.razor:**
 ```razor
 <Routes @rendermode="InteractiveServer" />
 <HeadOutlet @rendermode="InteractiveServer" />
 ```
 
-**Why Interactive Server?**
-- Required for MudBlazor dialogs and snackbars to work
-- Enables real-time progress updates via SignalR
-- Low latency for Azure API calls (server-side execution)
-- No need to download .NET runtime to browser
-
-**Trade-offs:**
-- Requires active SignalR connection
-- Server-side state (uses more server memory)
-- Reconnection modal shown if connection lost
+This is required for MudBlazor dialogs, snackbars, and real-time progress updates to function. The global mode is set in `App.razor` — removing it silently breaks all dialogs and snackbars.
 
 ---
 
@@ -1343,88 +1093,130 @@ finops/
 │
 ├── Program.cs                          # DI registration, middleware pipeline
 ├── FinOps.csproj                       # Project file, package references
-├── .claude/                            # Claude Code configuration
-│   └── CLAUDE.md                       # Project documentation
+├── appsettings.json                    # Logging, connection strings, AllowedHosts
+├── .claude/
+│   └── CLAUDE.md                       # Developer notes and conventions
 │
 ├── Components/
-│   ├── App.razor                       # HTML shell, global render mode
+│   ├── App.razor                       # HTML shell, global render mode, script order
 │   ├── Routes.razor                    # Router configuration
 │   ├── _Imports.razor                  # Global Razor usings
 │   │
 │   ├── Layout/
 │   │   ├── MainLayout.razor            # MudBlazor layout, app bar, drawer, providers
-│   │   ├── NavMenu.razor               # Side navigation menu
+│   │   ├── NavMenu.razor               # Side navigation (feature-flag controlled)
 │   │   └── ReconnectModal.razor        # SignalR reconnection UI
 │   │
 │   ├── Pages/
-│   │   ├── Home.razor                  # Landing page
+│   │   ├── Home.razor                  # Landing page / feature overview
 │   │   ├── Budgets.razor               # Subscription budget management
 │   │   ├── ResourceGroupBudgets.razor  # Resource group budget management
 │   │   ├── OverviewDashboard.razor     # Executive cost dashboard
-│   │   ├── CostOverview.razor          # Cost analysis with charts
+│   │   ├── CostOverview.razor          # Cost analysis with ApexCharts
 │   │   ├── CostDashboard.razor         # Single subscription cost dashboard
-│   │   ├── Tagging.razor               # Resource tagging
+│   │   ├── CostsByTagging.razor        # Cost breakdown by tag
+│   │   ├── Tagging.razor               # Resource tagging (apply + remove tabs)
 │   │   ├── Policy.razor                # Policy management (2 tabs)
 │   │   ├── Advisor.razor               # Azure Advisor recommendations
 │   │   ├── OrphanedResources.razor     # Orphaned resource scanner
 │   │   ├── SecurityRecommendations.razor # Security Center recommendations
 │   │   ├── ServiceRetirements.razor    # Service retirement scanner
 │   │   ├── LoggingUsage.razor          # Log Analytics usage analysis
-│   │   ├── Error.razor                 # Error page
+│   │   ├── Rightsizing.razor           # VM rightsizing recommendations
+│   │   ├── MaturityDashboard.razor     # Subscription maturity scoring
+│   │   ├── CarbonOptimisation.razor    # Carbon footprint estimation
+│   │   ├── PrivateEndpoints.razor      # Private endpoint recommendations
+│   │   ├── Themes.razor                # Theme selection
+│   │   ├── Admin.razor                 # Feature flag management
+│   │   ├── Error.razor                 # Error boundary page
 │   │   └── NotFound.razor              # 404 page
 │   │
 │   └── Dialogs/
-│       ├── ConnectTenantDialog.razor   # Tenant GUID input + validation
-│       ├── CreateBudgetDialog.razor    # Budget creation form
-│       └── AddTagsDialog.razor         # Tag key/value entry form
+│       ├── ConnectTenantDialog.razor   # Tenant GUID input + GUID validation
+│       ├── CreateBudgetDialog.razor    # Budget creation/edit form
+│       ├── AddTagsDialog.razor         # Tag key/value entry form
+│       └── RetirementDetailsDialog.razor # Service retirement details + resources
+│
+├── Pages/
+│   └── Account/
+│       ├── Login.cshtml / .cs          # Application login page
+│       ├── Register.cshtml / .cs       # New user registration
+│       └── Logout.cshtml / .cs         # POST logout with antiforgery
+│
+├── Data/
+│   ├── AppDbContext.cs                 # EF Core DbContext (Identity tables)
+│   └── ApplicationUser.cs             # Extended IdentityUser
 │
 ├── Services/
 │   ├── TenantClientManager.cs          # Core multi-tenant ArmClient manager
+│   ├── ITenantConnectionService.cs     # Tenant connection interface
+│   ├── TenantConnectionService.cs      # az login fallback connection
 │   ├── IAzureSubscriptionService.cs    # Subscription enumeration interface
-│   ├── AzureSubscriptionService.cs     # Subscription enumeration implementation
+│   ├── AzureSubscriptionService.cs     # Subscription enumeration (all tenants)
 │   ├── IBudgetService.cs               # Budget CRUD interface
-│   ├── BudgetService.cs                # Budget CRUD implementation
+│   ├── BudgetService.cs                # Budget CRUD (Consumption API)
 │   ├── ICostAnalysisService.cs         # Cost analysis interface
-│   ├── CostAnalysisService.cs          # Cost analysis with retry logic
+│   ├── CostAnalysisService.cs          # Cost queries + retry logic
 │   ├── IResourceTaggingService.cs      # Tagging interface
 │   ├── ResourceTaggingService.cs       # Tagging with progress callbacks
 │   ├── IPolicyService.cs               # Policy management interface
-│   ├── PolicyService.cs                # Policy assignment with managed identities
+│   ├── PolicyService.cs                # Policy assignment + managed identities
 │   ├── IAdvisorService.cs              # Advisor interface
-│   ├── AdvisorService.cs               # Advisor recommendations
+│   ├── AdvisorService.cs               # Advisor recommendations + scores
 │   ├── IOrphanedResourceService.cs     # Orphaned resource scanner interface
 │   ├── OrphanedResourceService.cs      # Resource Graph queries for orphans
-│   ├── ISecurityRecommendationService.cs # Security recommendations interface
-│   ├── SecurityRecommendationService.cs  # Security Center integration
-│   ├── IServiceRetirementService.cs    # Service retirement interface
-│   ├── ServiceRetirementService.cs     # Service Health API integration
-│   ├── ILogAnalyticsService.cs         # Log Analytics interface
-│   ├── LogAnalyticsService.cs          # Workspace usage queries
-│   └── ITenantConnectionService.cs     # Tenant connection interface
+│   ├── ISecurityRecommendationService.cs
+│   ├── SecurityRecommendationService.cs # Defender for Cloud integration
+│   ├── IServiceRetirementService.cs
+│   ├── ServiceRetirementService.cs     # Service Health + retirement matching
+│   ├── ILogAnalyticsService.cs
+│   ├── LogAnalyticsService.cs          # Workspace usage via Monitor Query API
+│   ├── IRightsizingService.cs
+│   ├── RightsizingService.cs           # Advisor-based rightsizing
+│   ├── IMaturityService.cs
+│   ├── MaturityService.cs              # Maturity scoring with progress callbacks
+│   ├── ICarbonService.cs
+│   ├── CarbonService.cs                # Carbon estimates by region
+│   ├── IPrivateEndpointService.cs
+│   ├── PrivateEndpointService.cs       # Private endpoint recommendations
+│   ├── IFeatureFlagService.cs
+│   ├── FeatureFlagService.cs           # Feature flag state + persistence
+│   ├── IThemeService.cs
+│   └── ThemeService.cs                 # Theme selection + persistence
 │
 └── Models/
     ├── TenantSubscription.cs           # Tenant + subscription DTO
     ├── BudgetInfo.cs                   # Budget read model
-    ├── BudgetFormModel.cs              # Budget form binding model
-    ├── BudgetCreationResult.cs         # Budget creation result
+    ├── BudgetFormModel.cs              # Budget form binding + validation
+    ├── BudgetAlertThreshold.cs         # Alert threshold config
+    ├── BudgetCreationResult.cs         # Budget operation result
     ├── ResourceGroupInfo.cs            # Resource group with tags
     ├── TagEntry.cs                     # Tag key/value pair
-    ├── TagFormModel.cs                 # Tag form binding model
-    ├── TagOperationResult.cs           # Tag operation result
+    ├── TagFormModel.cs                 # Tag form binding
+    ├── TagOperationResult.cs           # Per-resource tag result
     ├── PolicyAssignmentInfo.cs         # Policy assignment read model
     ├── PolicyOperationResult.cs        # Policy operation result
     ├── CostDataPoint.cs                # Historical cost data point
     ├── ForecastDataPoint.cs            # Forecast data point
     ├── CostBreakdownItem.cs            # Dimensional cost breakdown
+    ├── CostBreakdownBySubscriptionItem.cs
     ├── CostQueryResult.cs              # Cost query result
-    ├── ForecastResult.cs               # Forecast query result
-    ├── CostDashboardData.cs            # Dashboard aggregated data
+    ├── ForecastResult.cs               # Forecast result
+    ├── CostDashboardData.cs            # Aggregated dashboard data
     ├── AdvisorRecommendation.cs        # Advisor recommendation
     ├── AdvisorScore.cs                 # Advisor score per category
-    ├── OrphanedResource.cs             # Orphaned resource details
+    ├── OrphanedResourceInfo.cs         # Orphaned resource details
     ├── SecurityRecommendation.cs       # Security recommendation
     ├── ServiceRetirement.cs            # Retirement notice
-    └── WorkspaceUsage.cs               # Log Analytics usage data
+    ├── RetirementResource.cs           # Affected resource within a retirement
+    ├── RightsizingRecommendation.cs    # Rightsizing recommendation
+    ├── SubscriptionMaturityScore.cs    # Maturity score per subscription
+    ├── CarbonEstimate.cs               # Per-VM carbon estimate
+    ├── RegionCarbonSummary.cs          # Region-level carbon summary
+    ├── PrivateEndpointRecommendation.cs
+    ├── WorkspaceInfo.cs                # Log Analytics workspace
+    ├── WorkspaceUsageData.cs           # Workspace usage metrics
+    └── FeatureFlags.cs                 # Feature flag state model
 ```
 
 ---
@@ -1435,26 +1227,27 @@ finops/
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
+| **Redirected to login on start** | No account yet created | Register an account at `/Account/Register` |
+| **Login fails** | Incorrect credentials | Check email/password; account may be locked after 5 failures (wait 15 min) |
 | **App won't start** | Not logged in to Azure CLI | Run `az login` before starting the app |
-| **App hangs on startup** | Wrong credential type being used | Verify `AzureCliCredential` is used, not `DefaultAzureCredential` |
+| **App hangs on startup** | Wrong credential type | Verify `AzureCliCredential` is used, not `DefaultAzureCredential` |
 | **Process locked** | Previous instance still running | Run: `taskkill /F /IM FinOps.exe` (Windows) |
-| **Dialogs don't open** | Missing InteractiveServer render mode | Check `App.razor` has `@rendermode="InteractiveServer"` |
+| **Dialogs don't open** | Missing InteractiveServer render mode | Check `App.razor` has `@rendermode="InteractiveServer"` on `<Routes>` and `<HeadOutlet>` |
 | **Snackbars not showing** | Missing provider in layout | Verify `MainLayout.razor` has `<MudSnackbarProvider />` |
-| **Charts not loading** | Missing ApexCharts scripts | Verify `App.razor` includes ApexCharts JS before MudBlazor |
+| **Charts not loading** | Missing ApexCharts scripts | Verify `App.razor` loads `blazor.web.js` before `MudBlazor.min.js` |
+| **Feature missing from nav** | Feature flag disabled | Check Admin panel and enable the relevant feature flag |
 | **No subscriptions shown** | No access in current tenant | Verify `az account list` shows subscriptions |
 | **Connected tenant shows nothing** | Not logged into that tenant | Run: `az login --tenant <tenant-id>` |
 | **Tag operation returns 409** | Resource locked by another operation | Wait 5 minutes and retry |
 | **Policy assignment fails** | Missing permissions | Ensure you have `Microsoft.Authorization/policyAssignments/write` |
 | **Budget creation fails** | Missing Consumption permissions | Ensure you have `Microsoft.Consumption/budgets/write` |
-| **Cost queries fail with 429** | Too many API requests | Wait 60 seconds, app will retry automatically |
-| **Charts show "No data"** | No cost data in selected period | Select different date range or verify subscription has costs |
+| **Cost queries fail with 429** | Too many API requests | Wait 60 seconds; the app retries automatically |
+| **Charts show "No data"** | No cost data in selected period | Verify subscription has costs for the selected period |
 | **SignalR disconnected** | Network issue or server restart | Wait for reconnection modal, or refresh page |
 
 ### Debugging Tips
 
-**Enable detailed logging:**
-
-Add to `appsettings.json`:
+**Enable detailed logging** — add to `appsettings.json`:
 ```json
 {
   "Logging": {
@@ -1479,30 +1272,22 @@ az account list --output table
 az account list --query "[?tenantId=='<tenant-id>']" --output table
 ```
 
-**Browser developer tools:**
-- Open F12 DevTools
-- Check Console tab for JavaScript errors
-- Check Network tab for failed API calls
-- Check Application > Local Storage for session state
-
 **Common error messages:**
 
 | Error Message | Meaning | Fix |
 |--------------|---------|-----|
-| "AzureCliCredential authentication failed" | Not logged into Azure CLI | Run `az login` |
-| "429 Too Many Requests" | Rate limit exceeded | Wait 60 seconds, reduce parallel operations |
-| "403 Forbidden" | Insufficient permissions | Grant appropriate RBAC role |
-| "404 Not Found" | Resource or subscription doesn't exist | Verify resource ID and subscription |
-| "409 Conflict" | Resource is locked | Wait for conflicting operation to complete |
-| "The circuit failed to initialize" | Blazor SignalR connection issue | Refresh page, check network connectivity |
+| `AzureCliCredential authentication failed` | Not logged into Azure CLI | Run `az login` |
+| `429 Too Many Requests` | Rate limit exceeded | Wait 60 seconds |
+| `403 Forbidden` | Insufficient permissions | Grant appropriate RBAC role |
+| `404 Not Found` | Resource or subscription doesn't exist | Verify resource ID |
+| `409 Conflict` | Resource is locked | Wait for conflicting operation to complete |
+| `The circuit failed to initialize` | Blazor SignalR connection issue | Refresh page, check network connectivity |
 
 ---
 
 ## Rate Limiting & Best Practices
 
 ### Azure API Rate Limits
-
-Azure APIs have rate limits to prevent abuse. Common limits:
 
 | API | Limit | Scope |
 |-----|-------|-------|
@@ -1512,214 +1297,68 @@ Azure APIs have rate limits to prevent abuse. Common limits:
 | **Resource Graph** | 15 requests/second | Per tenant |
 | **Advisor** | 100 requests/minute | Per subscription |
 
-### Rate Limiting in FinOps
+### Rate Limiting Strategies in FinOps
 
-The application implements several rate limiting strategies:
-
-**1. Exponential Backoff with Retry**
-
-All cost management queries use automatic retry logic:
-```csharp
-private static async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> operation)
-{
-    for (int attempt = 0; attempt < 3; attempt++)
-    {
-        try { return await operation(); }
-        catch (RequestFailedException ex) when (ex.Status == 429)
-        {
-            var delayMs = 1000 * (int)Math.Pow(2, attempt); // 1s, 2s, 4s
-            await Task.Delay(delayMs);
-        }
-    }
-}
+**Exponential Backoff with Retry** — all cost queries retry automatically on 429:
+```
+Attempt 1 → 1 second delay → Attempt 2 → 2 second delay → Attempt 3
 ```
 
-**2. Batched API Calls**
+**Batched API Calls** — Cost Overview loads data in batches with 800ms delays:
+- Batch 1: Historical costs → 800ms → Batch 2: Forecasts → 800ms → Batch 3: Breakdowns
 
-Cost Overview page loads data in batches with delays:
-- Batch 1: Historical costs (all subscriptions in parallel)
-- **800ms delay**
-- Batch 2: Forecasts
-- **800ms delay**
-- Batch 3: Service breakdown
-- **800ms delay**
-- Batch 4: Resource group breakdown
+**On-Demand Loading** — data only fetches when you select subscriptions or click scan/load buttons.
 
-**3. On-Demand Loading**
+### Best Practices
 
-Instead of loading all data on page load, data fetches only when:
-- User selects subscriptions
-- User clicks "Get Recommendations" / "Scan" buttons
-- User expands sections
+1. Analyse 1-5 subscriptions at a time rather than selecting all at once
+2. Wait for one scan to complete before starting another
+3. If you see `429 Too Many Requests`, wait 60 seconds — do not manually retry
+4. Run intensive scans (Security, Orphaned Resources, Maturity) during off-peak hours
+5. Close browser tabs when not in use to free server memory
 
-**4. Caching**
+### Performance Reference
 
-Future enhancement: Cache cost data for 15 minutes to reduce redundant queries.
-
-### Best Practices to Avoid Rate Limits
-
-1. **Select Fewer Subscriptions:**
-   - Analyze 1-5 subscriptions at a time
-   - Don't select all 50 subscriptions at once
-
-2. **Sequential Operations:**
-   - Don't click multiple "Scan" buttons simultaneously
-   - Wait for one scan to complete before starting another
-
-3. **Avoid Rapid Refreshes:**
-   - Don't refresh pages repeatedly
-   - Wait at least 60 seconds between refreshes
-
-4. **Use Filters:**
-   - Filter subscription lists before selecting
-   - Only select subscriptions you need to analyze
-
-5. **Monitor Rate Limit Errors:**
-   - If you see "429 Too Many Requests", wait 60 seconds
-   - The app will automatically retry, don't manually retry
-
-6. **Schedule Scans:**
-   - Run intensive scans (Orphaned Resources, Security) during off-peak hours
-   - Don't run all scans simultaneously
-
-### Performance Optimization Tips
-
-**Fast Operations:**
-- Viewing subscription lists (< 1 second)
-- Creating single budget (< 2 seconds)
-- Connecting tenants (< 1 second)
-
-**Medium Operations (5-15 seconds):**
-- Loading cost charts for 1-3 subscriptions
-- Getting Advisor recommendations
-- Scanning orphaned resources
-
-**Slow Operations (30-60 seconds):**
-- Loading cost data for 10+ subscriptions
-- Scanning security recommendations across multiple subscriptions
-- Log Analytics usage analysis
-
-**Optimization Tips:**
-- Use search/filter before selecting subscriptions
-- Analyze subscriptions in batches (5 at a time)
-- Close browser tabs when not in use (free up server memory)
-- Clear selections when done to stop background polling
-
----
-
-## Advanced Topics
-
-### Custom Queries with Resource Graph
-
-The Orphaned Resources feature uses Azure Resource Graph. You can extend this for custom queries.
-
-**Example: Find VMs without backup:**
-
-```csharp
-// In OrphanedResourceService.cs
-var query = @"
-Resources
-| where type == 'microsoft.compute/virtualmachines'
-| where properties.storageProfile.osDisk.managedDisk.id !in (
-    Resources
-    | where type == 'microsoft.recoveryservices/vaults/backupfabrics/protectioncontainers/protecteditems'
-    | project properties.sourceResourceId
-)
-| project name, resourceGroup, location";
-```
-
-### Extending Budget Alerts
-
-Budgets support email/SMS alerts. To add alert configuration:
-
-1. Extend `BudgetFormModel` with alert thresholds
-2. Update `CreateBudgetDialog` with threshold inputs
-3. Modify `BudgetService.CreateBudgetAsync` to add notifications
-
-### Creating Custom Dashboards
-
-To create new dashboard pages:
-
-1. Create new Razor page in `Components/Pages/`
-2. Inject required services
-3. Add to `NavMenu.razor`
-4. Follow existing patterns for subscription selection and data loading
-
----
-
-## Contributing
-
-### Code Style Guidelines
-
-- Use explicit type declarations (`string` not `var` for readability)
-- Services should be async by default
-- All external API calls should have timeout and retry logic
-- Use `StateHasChanged()` after async operations in Blazor components
-- Follow existing naming conventions for consistency
-
-### Testing Locally
-
-Before committing changes:
-
-1. **Build:** `dotnet build` (must succeed with 0 warnings)
-2. **Run:** `dotnet run` and test manually
-3. **Test multi-tenant:** Connect to a secondary tenant
-4. **Test error handling:** Disconnect from network, verify graceful failures
-5. **Check UI:** Test on mobile width (resize browser)
-
----
-
-## Security Considerations
-
-### Data Privacy
-
-- No data is stored persistently (all in-memory, per-session)
-- No logging of sensitive data (subscription IDs, tenant IDs are logged, but not credentials)
-- All communications with Azure use HTTPS
-
-### Authentication Security
-
-- Uses Azure CLI credentials (no passwords stored)
-- Leverages Azure RBAC for permissions
-- No custom authentication/authorization logic
-
-### Deployment Security
-
-If deploying to production:
-
-1. **Use HTTPS only** (configure certificates)
-2. **Enable authentication** (Azure AD integration)
-3. **Restrict network access** (firewall/NSG rules)
-4. **Enable audit logging** (Azure Monitor)
-5. **Use managed identities** (instead of Azure CLI credentials)
+| Operation | Typical Time |
+|-----------|-------------|
+| View subscription list | < 1 second |
+| Create a single budget | < 2 seconds |
+| Connect a tenant | < 1 second |
+| Cost charts (1-3 subscriptions) | 3-8 seconds |
+| Advisor recommendations | 10-20 seconds |
+| Security scan | 20-40 seconds |
+| Maturity scoring (5 subscriptions) | 30-60 seconds |
 
 ---
 
 ## FAQ
 
 **Q: Can I use this without Azure CLI?**
-A: No, the app exclusively uses `AzureCliCredential`. You must run `az login` first.
+A: No. The app uses `AzureCliCredential` exclusively. Run `az login` before starting the app.
+
+**Q: How do I create the first user account?**
+A: Register at `/Account/Register` before the first login. Subsequent accounts can also be created there, or provisioned by an administrator directly in the database.
 
 **Q: Does this work with Azure Government or Azure China?**
-A: Not currently, but could be extended by configuring `ArmEnvironment` in `ArmClient` initialization.
+A: Not currently, but it could be extended by configuring `ArmEnvironment` in `ArmClient` initialization.
 
 **Q: Can I export cost data to Excel/CSV?**
 A: Not currently implemented, but could be added using MudBlazor table export features.
 
 **Q: How do I add more subscriptions?**
-A: If you have access via your home tenant (Lighthouse), they appear automatically. Otherwise, use "Connect Tenant" to add additional tenants.
+A: Lighthouse-delegated subscriptions appear automatically. For other tenants, use "Connect Tenant".
 
 **Q: Is there a dark mode?**
-A: Yes, toggle in the header (moon icon).
+A: Yes — toggle with the moon icon in the top bar. The MissionControl and DarkFinance themes also provide full dark experiences.
 
 **Q: Can multiple users use this simultaneously?**
-A: Yes, Blazor Server supports multiple concurrent users, each with their own session.
+A: Yes. Each user has their own session with independent tenant connections, subscription selections, and Azure credentials.
+
+**Q: A feature is missing from the navigation — where is it?**
+A: Check the Admin panel (`/admin`). The feature may be disabled via a feature flag.
 
 **Q: How much does running this app cost?**
-A: The app itself is free (just .NET hosting). Azure API calls are free. You only pay for Azure resources you create (budgets, policies, etc.).
-
-**Q: Can I customize the charts?**
-A: Yes, edit `CostOverview.razor` and modify ApexCharts options.
+A: The app itself is free (.NET hosting). Azure API calls for read operations are free. You only pay for Azure resources you create (budgets, policy assignments, etc.).
 
 ---
 
@@ -1732,10 +1371,10 @@ This project is for internal use. See LICENSE file for details.
 ## Support
 
 For issues, questions, or feature requests:
-- Check the [Troubleshooting](#troubleshooting) section
+- Check the [Troubleshooting](#troubleshooting) section first
 - Review existing GitHub issues
-- Create a new issue with detailed description and error messages
+- Create a new issue with a detailed description and the error message from the browser console or server logs
 
 ---
 
-**Built with ❤️ using .NET 10, Blazor Server, and MudBlazor**
+*Built with .NET 10, Blazor Server, and MudBlazor*
