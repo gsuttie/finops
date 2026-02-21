@@ -1,8 +1,9 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 
 namespace FinOps.Services;
 
-public class TenantConnectionService(TenantClientManager tenantClientManager) : ITenantConnectionService
+public class TenantConnectionService(TenantClientManager tenantClientManager, ILogger<TenantConnectionService> logger) : ITenantConnectionService
 {
     private static readonly TimeSpan LoginTimeout = TimeSpan.FromMinutes(5);
 
@@ -55,14 +56,16 @@ public class TenantConnectionService(TenantClientManager tenantClientManager) : 
             if (process.ExitCode != 0)
             {
                 var stderr = await process.StandardError.ReadToEndAsync();
+                logger.LogError("az login failed for tenant {TenantId} (exit {ExitCode}): {Stderr}", tenantId, process.ExitCode, stderr);
                 tenantClientManager.DisconnectTenant(tenantId);
-                return new TenantConnectionResult(TenantConnectionStatus.Failed, $"az login failed: {stderr}");
+                return new TenantConnectionResult(TenantConnectionStatus.Failed, "Azure login failed. Check server logs for details.");
             }
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Unexpected error running az login for tenant {TenantId}", tenantId);
             tenantClientManager.DisconnectTenant(tenantId);
-            return new TenantConnectionResult(TenantConnectionStatus.Failed, $"Failed to run az login: {ex.Message}");
+            return new TenantConnectionResult(TenantConnectionStatus.Failed, "Azure login failed. Check server logs for details.");
         }
 
         // az login succeeded — reconnect with fresh credentials
