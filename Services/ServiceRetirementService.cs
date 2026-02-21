@@ -1,11 +1,12 @@
 using Azure.ResourceManager.ResourceGraph;
 using Azure.ResourceManager.ResourceGraph.Models;
 using FinOps.Models;
+using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace FinOps.Services;
 
-public class ServiceRetirementService(TenantClientManager tenantClientManager) : IServiceRetirementService
+public class ServiceRetirementService(TenantClientManager tenantClientManager, ILogger<ServiceRetirementService> logger) : IServiceRetirementService
 {
     private readonly TenantClientManager _tenantClientManager = tenantClientManager;
 
@@ -40,7 +41,7 @@ public class ServiceRetirementService(TenantClientManager tenantClientManager) :
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error processing tenant {tenantGroup.Key}: {ex.Message}");
+                logger.LogError(ex, "Error processing tenant {TenantId}", tenantGroup.Key);
                 return new List<ServiceRetirement>();
             }
         });
@@ -151,7 +152,7 @@ advisorresources
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Error parsing retirement row: {ex.Message}");
+                    logger.LogError(ex, "Error parsing retirement row");
                 }
             }
         }
@@ -185,7 +186,7 @@ advisorresources
         return retirements;
     }
 
-    private static string ExtractServiceName(string resourceType)
+    private string ExtractServiceName(string resourceType)
     {
         if (string.IsNullOrEmpty(resourceType))
         {
@@ -209,7 +210,7 @@ advisorresources
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error extracting service name from '{resourceType}': {ex.Message}");
+            logger.LogError(ex, "Error extracting service name from resource type {ResourceType}", resourceType);
         }
 
         return "Unknown";
