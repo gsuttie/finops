@@ -7,7 +7,10 @@ namespace FinOps.Pages.Account;
 
 public class LogoutModel(SignInManager<ApplicationUser> signInManager) : PageModel
 {
-    public async Task<IActionResult> OnGetAsync()
+    public IActionResult OnGet() => RedirectToPage("/Account/Login");
+
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> OnPostAsync()
     {
         await signInManager.SignOutAsync();
         return RedirectToPage("/Account/Login");

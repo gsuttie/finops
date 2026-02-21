@@ -17,10 +17,13 @@
         <AuthorizeView>
             <Authorized>
                 <MudText Typo="Typo.body2" Class="mr-2">@context.User.Identity?.Name</MudText>
-                <MudIconButton Icon="@Icons.Material.Filled.Logout"
-                               Color="Color.Inherit"
-                               Href="/Account/Logout"
-                               title="Sign out" />
+                <form method="post" action="/Account/Logout">
+                    <AntiforgeryToken />
+                    <MudIconButton Icon="@Icons.Material.Filled.Logout"
+                                   Color="Color.Inherit"
+                                   ButtonType="ButtonType.Submit"
+                                   title="Sign out" />
+                </form>
             </Authorized>
         </AuthorizeView>
         <MudIconButton Icon="@(_isDarkMode ? Icons.Material.Filled.LightMode : Icons.Material.Filled.DarkMode)"
