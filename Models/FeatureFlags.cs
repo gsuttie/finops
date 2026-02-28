@@ -15,4 +15,5 @@ public class FeatureFlags
     public bool Rightsizing { get; set; } = true;
     public bool Maturity { get; set; } = true;
     public bool Carbon { get; set; } = true;
+    public bool Themes { get; set; } = true;
 }

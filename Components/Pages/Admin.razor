@@ -55,6 +55,9 @@
             <MudItem xs="12" sm="6">
                 <MudCheckBox T="bool" @bind-Value="_edit.Carbon" Label="Carbon Optimisation" Color="Color.Primary" />
             </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.Themes" Label="Themes" Color="Color.Primary" />
+            </MudItem>
         </MudGrid>
 
         <MudDivider Class="my-6" />
@@ -97,6 +100,7 @@
             Rightsizing = f.Rightsizing,
             Maturity = f.Maturity,
             Carbon = f.Carbon,
+            Themes = f.Themes,
         };
     }
 
@@ -130,6 +134,7 @@
             Rightsizing = false,
             Maturity = false,
             Carbon = false,
+            Themes = false,
         };
         await FeatureFlagService.SaveAsync(_edit);
         Snackbar.Add("All features disabled.", Severity.Warning);
