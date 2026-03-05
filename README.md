@@ -34,6 +34,8 @@ A comprehensive Blazor Server application for managing Azure FinOps, budgets, co
   - [Private Endpoint Recommendations](#14-private-endpoint-recommendations)
   - [Theme Management](#15-theme-management)
   - [Admin Panel](#16-admin-panel)
+  - [Cost Questions](#17-cost-questions)
+  - [Upsell Opportunities](#18-upsell-opportunities)
 - [Multi-Tenant Support](#multi-tenant-support)
 - [Feature Flags](#feature-flags)
 - [Architecture](#architecture)
@@ -866,6 +868,8 @@ Log Analytics costs are based on data ingestion (GB) and retention:
 | **Maturity** | Maturity dashboard |
 | **Carbon** | Carbon optimisation page |
 | **Themes** | Theme selection page |
+| **Cost Questions** | AI-powered FinOps chat (GitHub Copilot) |
+| **Upsell** | Upsell opportunities scanner |
 
 **Workflow:**
 1. Navigate to Admin in the side navigation
@@ -874,6 +878,76 @@ Log Analytics costs are based on data ingestion (GB) and retention:
 4. Changes take effect immediately for all connected users — the navigation updates in real time
 
 > **Access:** The Admin panel requires an admin-role account. Contact your administrator if you need access.
+
+---
+
+### 17. Cost Questions
+
+**Location:** `/cost-questions`
+
+**Purpose:** An AI-powered chat interface that lets you ask natural-language questions about Azure costs and FinOps best practices, powered by GitHub Copilot.
+
+**Features:**
+- Conversational chat UI with message history
+- Real-time streaming responses from GitHub Copilot
+- Persistent session for follow-up questions within a browser session
+- Enter to send, Shift+Enter for multi-line input
+
+**Workflow:**
+1. Navigate to Cost Questions in the side navigation
+2. Wait for the Copilot session to initialise (spinner shown)
+3. Type a question in the input box and press Enter or click Send
+4. Copilot streams a response in real time
+5. Continue the conversation with follow-up questions
+
+**Example questions:**
+- "What are the top strategies for reducing Azure VM costs?"
+- "How do I set up Azure budgets with alerts?"
+- "What is a FinOps maturity model?"
+- "How does Azure Reserved Instances pricing compare to pay-as-you-go?"
+
+> **Note:** This feature is controlled by a feature flag and requires a valid GitHub Copilot token. Enable it from the Admin panel. If the session fails to initialise, an error message is shown — check that Copilot credentials are available.
+
+---
+
+### 18. Upsell Opportunities
+
+**Location:** `/upsell`
+
+**Purpose:** Scan your Azure subscriptions for actionable improvement opportunities — cost savings, security enhancements, reliability improvements, and performance optimisations — presented in a prioritised, filterable table.
+
+**Step-by-Step Workflow:**
+
+1. **Select Subscriptions**
+   - Connect tenants (optional) using the tenant bar
+   - Select one or more subscriptions to scan
+
+2. **Scan**
+   - Click "Scan" to analyse the selected subscriptions
+   - A progress bar is shown while scanning across all Azure services
+
+3. **Review Opportunities**
+   - Results appear in a table with the following columns:
+     - **Impact:** High / Medium / Low (colour-coded)
+     - **Category:** Cost, Security, Reliability, Performance, etc.
+     - **Opportunity:** Title, business value, and technical detail
+     - **Resource:** Affected resource with Azure Portal link
+     - **Subscription:** Link to subscription in Portal
+     - **Source:** Data source (e.g., Advisor, Security Center)
+     - **Est. Savings/mo:** Estimated monthly saving where applicable
+
+4. **Filter Results**
+   - Click Impact or Category chips in the summary bar to filter
+   - Use the search box to search by keyword
+   - Click "Clear Filters" to reset
+
+**Use Cases:**
+- Consolidated view of all optimisation opportunities in one place
+- Prioritise work by impact and potential savings
+- MSP/partner reporting on customer subscription improvements
+- Pre-sales upsell identification for Azure services
+
+> **Note:** This feature is controlled by a feature flag and may need to be enabled in the Admin panel.
 
 ---
 
@@ -1043,6 +1117,13 @@ ICarbonService (scoped)
 IPrivateEndpointService (scoped)
 └── Identify services that should use private endpoints
 
+ICopilotService (scoped)
+├── Create Copilot chat sessions
+└── Stream responses via GitHub Copilot API
+
+IUpsellService (scoped)
+└── Scan subscriptions for upsell/optimisation opportunities
+
 IFeatureFlagService (singleton)
 ├── Feature flag state (which pages are enabled)
 ├── Persists to featureflags.json
@@ -1127,6 +1208,8 @@ finops/
 │   │   ├── CarbonOptimisation.razor    # Carbon footprint estimation
 │   │   ├── PrivateEndpoints.razor      # Private endpoint recommendations
 │   │   ├── Themes.razor                # Theme selection
+│   │   ├── CostQuestions.razor         # AI-powered FinOps chat (GitHub Copilot)
+│   │   ├── Upsell.razor                # Upsell / optimisation opportunities
 │   │   ├── Admin.razor                 # Feature flag management
 │   │   ├── Error.razor                 # Error boundary page
 │   │   └── NotFound.razor              # 404 page
@@ -1179,6 +1262,12 @@ finops/
 │   ├── CarbonService.cs                # Carbon estimates by region
 │   ├── IPrivateEndpointService.cs
 │   ├── PrivateEndpointService.cs       # Private endpoint recommendations
+│   ├── ICopilotService.cs
+│   ├── CopilotService.cs               # GitHub Copilot chat session management
+│   ├── ICopilotChatSession.cs
+│   ├── CopilotChatSession.cs           # Per-conversation Copilot session
+│   ├── IUpsellService.cs
+│   ├── UpsellService.cs                # Upsell/optimisation opportunity scanner
 │   ├── IFeatureFlagService.cs
 │   ├── FeatureFlagService.cs           # Feature flag state + persistence
 │   ├── IThemeService.cs
@@ -1216,6 +1305,7 @@ finops/
     ├── PrivateEndpointRecommendation.cs
     ├── WorkspaceInfo.cs                # Log Analytics workspace
     ├── WorkspaceUsageData.cs           # Workspace usage metrics
+    ├── UpsellOpportunity.cs            # Upsell/optimisation opportunity
     └── FeatureFlags.cs                 # Feature flag state model
 ```
 
