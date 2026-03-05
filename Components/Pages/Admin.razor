@@ -61,6 +61,9 @@
             <MudItem xs="12" sm="6">
                 <MudCheckBox T="bool" @bind-Value="_edit.CostQuestions" Label="Cost Questions" Color="Color.Primary" />
             </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudCheckBox T="bool" @bind-Value="_edit.Upsell" Label="Upsell Opportunities" Color="Color.Primary" />
+            </MudItem>
         </MudGrid>
 
         <MudDivider Class="my-6" />
@@ -105,6 +108,7 @@
             Carbon = f.Carbon,
             Themes = f.Themes,
             CostQuestions = f.CostQuestions,
+            Upsell = f.Upsell,
         };
     }
 
@@ -140,6 +144,7 @@
             Carbon = false,
             Themes = false,
             CostQuestions = false,
+            Upsell = false,
         };
         await FeatureFlagService.SaveAsync(_edit);
         Snackbar.Add("All features disabled.", Severity.Warning);

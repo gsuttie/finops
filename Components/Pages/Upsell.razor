@@ -1,0 +1,416 @@
+@page "/upsell"
+@using FinOps.Models
+@using FinOps.Services
+@inject IAzureSubscriptionService SubscriptionService
+@inject IUpsellService UpsellService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ILogger<Upsell> Logger
+
+<PageTitle>Upsell Opportunities</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Upsell Opportunities</MudText>
+
+@* Tenant connection bar *@
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Default" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Refresh" OnClick="@LoadSubscriptions">
+            Refresh
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+@* Subscription selection table *@
+<MudTable T="TenantSubscription" Items="@_filteredSubscriptions" MultiSelection="true"
+          SelectedItems="_selectedSubscriptions" SelectedItemsChanged="OnSelectedSubscriptionsChanged"
+          Loading="@_loadingSubscriptions" Hover="true" Dense="true" Elevation="2">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Subscriptions</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_subSearchText" Placeholder="Search subscriptions..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="Size.Medium" Immediate="true" Class="mr-4" Style="max-width: 300px;" />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   StartIcon="@Icons.Material.Filled.TrendingUp"
+                   OnClick="@ScanForOpportunities">
+            Scan (@_selectedSubscriptions.Count selected)
+        </MudButton>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
+            <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.TenantId</MudText>
+        </MudTd>
+        <MudTd DataLabel="Name">
+            <MudLink Href="@GetSubscriptionPortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                @context.DisplayName
+            </MudLink>
+        </MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudLink Href="@GetSubscriptionPortalUrl(context)" Target="_blank" Typo="Typo.body2" Style="font-family: monospace;">
+                @context.SubscriptionId
+            </MudLink>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        @if (_loadError is not null)
+        {
+            <MudText Color="Color.Error">@_loadError</MudText>
+        }
+        else
+        {
+            <MudText>No subscriptions found.</MudText>
+        }
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@* Summary bar *@
+@if (_opportunities.Count > 0)
+{
+    <MudPaper Class="pa-3 mt-4 mb-2" Elevation="1">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+            <MudText Typo="Typo.body1" Class="mr-2"><b>@_opportunities.Count</b> opportunities found</MudText>
+
+            @* Impact chips *@
+            @foreach (var group in _impactCounts)
+            {
+                <MudChip T="string" Color="@GetImpactColor(group.Key)" Size="Size.Small"
+                         Variant="@(_activeImpact == group.Key ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => ToggleImpactFilter(group.Key))">
+                    @group.Key (@group.Value)
+                </MudChip>
+            }
+
+            <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+
+            @* Category chips *@
+            @foreach (var group in _categoryCounts)
+            {
+                <MudChip T="string" Color="@GetCategoryColor(group.Key)" Size="Size.Small"
+                         Variant="@(_activeCategory == group.Key ? Variant.Filled : Variant.Outlined)"
+                         OnClick="@(() => ToggleCategoryFilter(group.Key))">
+                    @group.Key (@group.Value)
+                </MudChip>
+            }
+
+            @if (_activeImpact is not null || _activeCategory is not null)
+            {
+                <MudButton Variant="Variant.Text" Size="Size.Small" Color="Color.Default" OnClick="@ClearFilters">
+                    Clear Filters
+                </MudButton>
+            }
+        </MudStack>
+    </MudPaper>
+}
+
+@if (_scanning)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+    <MudText Typo="Typo.body2" Class="mt-2" Align="Align.Center">Scanning for upsell opportunities across all services...</MudText>
+}
+
+@* Results table *@
+@if (_scanComplete)
+{
+    <MudTable T="UpsellOpportunity" Items="@_filteredResults" Hover="true" Dense="true" Elevation="2" Class="mt-4">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Opportunities</MudText>
+            <MudSpacer />
+            <MudTextField T="string" @bind-Value="_resultSearchText" Placeholder="Search opportunities..."
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                          IconSize="Size.Medium" Immediate="true" Style="max-width: 300px;" />
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh><MudTableSortLabel T="UpsellOpportunity" SortBy="@(new Func<UpsellOpportunity, object>(x => x.Impact.ToString()))">Impact</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="UpsellOpportunity" SortBy="@(new Func<UpsellOpportunity, object>(x => x.Category.ToString()))">Category</MudTableSortLabel></MudTh>
+            <MudTh>Opportunity</MudTh>
+            <MudTh>Resource</MudTh>
+            <MudTh><MudTableSortLabel T="UpsellOpportunity" SortBy="@(new Func<UpsellOpportunity, object>(x => x.SubscriptionName))">Subscription</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="UpsellOpportunity" SortBy="@(new Func<UpsellOpportunity, object>(x => x.Source))">Source</MudTableSortLabel></MudTh>
+            <MudTh><MudTableSortLabel T="UpsellOpportunity" SortBy="@(new Func<UpsellOpportunity, object>(x => x.EstimatedMonthlySavings ?? 0))">Est. Savings/mo</MudTableSortLabel></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Impact">
+                <MudChip T="string" Color="@GetImpactColor(context.Impact.ToString())" Size="Size.Small">
+                    @context.Impact
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Category">
+                <MudChip T="string" Color="@GetCategoryColor(context.Category.ToString())" Size="Size.Small">
+                    @context.Category
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Opportunity">
+                <MudText Typo="Typo.body2"><strong>@context.Title</strong></MudText>
+                <MudText Typo="Typo.caption" Color="Color.Primary" Class="mt-1">@context.BusinessValue</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">@context.TechnicalDetail</MudText>
+            </MudTd>
+            <MudTd DataLabel="Resource">
+                @if (!string.IsNullOrEmpty(context.AzurePortalUrl))
+                {
+                    <MudLink Href="@context.AzurePortalUrl" Target="_blank" Typo="Typo.body2" Underline="Underline.Always">
+                        @context.ResourceName
+                    </MudLink>
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2">@context.ResourceName</MudText>
+                }
+            </MudTd>
+            <MudTd DataLabel="Subscription">
+                <MudLink Href="@GetSubPortalUrl(context)" Target="_blank" Typo="Typo.body2" Underline="Underline.Always">
+                    @context.SubscriptionName
+                </MudLink>
+            </MudTd>
+            <MudTd DataLabel="Source">
+                <MudChip T="string" Color="Color.Default" Size="Size.Small" Variant="Variant.Outlined">
+                    @context.Source
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Est. Savings/mo">
+                @if (context.EstimatedMonthlySavings.HasValue)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Success">
+                        $@context.EstimatedMonthlySavings.Value.ToString("F0")/mo
+                    </MudText>
+                }
+                else
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+                }
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No upsell opportunities found — environment looks great!</MudText>
+        </NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private List<TenantSubscription> _subscriptions = [];
+    private HashSet<TenantSubscription> _selectedSubscriptions = [];
+    private List<UpsellOpportunity> _opportunities = [];
+    private bool _loadingSubscriptions = true;
+    private bool _scanning;
+    private bool _scanComplete;
+    private string? _loadError;
+    private string _subSearchText = string.Empty;
+    private string _resultSearchText = string.Empty;
+    private string? _activeImpact;
+    private string? _activeCategory;
+    private string? _homeTenantDisplayName;
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_subSearchText)
+            ? _subscriptions
+            : _subscriptions.Where(s =>
+                s.DisplayName.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.TenantId.Contains(_subSearchText, StringComparison.OrdinalIgnoreCase));
+
+    private Dictionary<string, int> _impactCounts =>
+        _opportunities
+            .GroupBy(o => o.Impact.ToString())
+            .OrderBy(g => g.Key == "High" ? 0 : g.Key == "Medium" ? 1 : 2)
+            .ToDictionary(g => g.Key, g => g.Count());
+
+    private Dictionary<string, int> _categoryCounts =>
+        _opportunities
+            .GroupBy(o => o.Category.ToString())
+            .OrderByDescending(g => g.Count())
+            .ToDictionary(g => g.Key, g => g.Count());
+
+    private IEnumerable<UpsellOpportunity> _filteredResults
+    {
+        get
+        {
+            var results = _opportunities.AsEnumerable();
+
+            if (_activeImpact is not null)
+                results = results.Where(o => o.Impact.ToString() == _activeImpact);
+
+            if (_activeCategory is not null)
+                results = results.Where(o => o.Category.ToString() == _activeCategory);
+
+            if (!string.IsNullOrWhiteSpace(_resultSearchText))
+            {
+                results = results.Where(o =>
+                    o.Title.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    o.BusinessValue.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    o.TechnicalDetail.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    o.ResourceName.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    o.SubscriptionName.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase) ||
+                    o.Source.Contains(_resultSearchText, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return results;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loadingSubscriptions = true;
+        _loadError = null;
+        _selectedSubscriptions.Clear();
+        StateHasChanged();
+
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
+        }
+        finally
+        {
+            _loadingSubscriptions = false;
+        }
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect Tenant", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+
+    private void OnSelectedSubscriptionsChanged(HashSet<TenantSubscription> selected)
+    {
+        _selectedSubscriptions = selected;
+    }
+
+    private async Task ScanForOpportunities()
+    {
+        if (_selectedSubscriptions.Count == 0)
+        {
+            Snackbar.Add("Please select at least one subscription to scan.", Severity.Warning);
+            return;
+        }
+
+        _scanning = true;
+        _scanComplete = false;
+        _opportunities.Clear();
+        _activeImpact = null;
+        _activeCategory = null;
+        StateHasChanged();
+
+        try
+        {
+            var results = await UpsellService.GetOpportunitiesAsync(_selectedSubscriptions);
+            _opportunities = results.ToList();
+            _scanComplete = true;
+
+            if (_opportunities.Count == 0)
+                Snackbar.Add("No upsell opportunities found!", Severity.Success);
+            else
+                Snackbar.Add($"Found {_opportunities.Count} opportunity(s)", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Upsell scan failed");
+            Snackbar.Add("Scan failed.", Severity.Error);
+        }
+        finally
+        {
+            _scanning = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleImpactFilter(string impact) =>
+        _activeImpact = _activeImpact == impact ? null : impact;
+
+    private void ToggleCategoryFilter(string category) =>
+        _activeCategory = _activeCategory == category ? null : category;
+
+    private void ClearFilters()
+    {
+        _activeImpact = null;
+        _activeCategory = null;
+    }
+
+    private static Color GetStateColor(string? state) => state switch
+    {
+        "Enabled" => Color.Success,
+        "Disabled" => Color.Error,
+        _ => Color.Default
+    };
+
+    private static Color GetImpactColor(string impact) => impact switch
+    {
+        "High" => Color.Error,
+        "Medium" => Color.Warning,
+        "Low" => Color.Info,
+        _ => Color.Default
+    };
+
+    private static Color GetCategoryColor(string category) => category switch
+    {
+        "Security" => Color.Secondary,
+        "CostOptimization" => Color.Success,
+        "Modernization" => Color.Primary,
+        "Reliability" => Color.Warning,
+        "Governance" => Color.Info,
+        _ => Color.Default
+    };
+
+    private static string GetSubscriptionPortalUrl(TenantSubscription sub) =>
+        $"https://portal.azure.com/#@{sub.TenantId}/resource/subscriptions/{sub.SubscriptionId}/overview";
+
+    private static string GetSubPortalUrl(UpsellOpportunity o) =>
+        $"https://portal.azure.com/#@{o.TenantId}/resource/subscriptions/{o.SubscriptionId}/overview";
+}

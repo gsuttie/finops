@@ -17,4 +17,5 @@ public class FeatureFlags
     public bool Carbon { get; set; } = true;
     public bool Themes { get; set; } = true;
     public bool CostQuestions { get; set; } = true;
+    public bool Upsell { get; set; } = true;
 }

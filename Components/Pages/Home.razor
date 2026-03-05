@@ -245,6 +245,20 @@
                 </MudCard>
             </MudItem>
         }
+        @if (FeatureFlagService.Flags.Upsell)
+        {
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Class="feature-card" Style="border-top: 3px solid #ff6f00;" @onclick='() => Nav.NavigateTo("upsell")'>
+                    <MudCardContent Class="text-center pa-6">
+                        <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Large" Style="color: #ff6f00;" Class="mb-3" />
+                        <MudText Typo="Typo.h6">Upsell Opportunities</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                            Aggregated improvement findings for customer conversations
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
         <MudItem xs="12" sm="6" md="4">
             <MudCard Class="feature-card" Style="border-top: 3px solid #9c27b0;">
                 <MudCardContent Class="text-center pa-6">
