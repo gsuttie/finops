@@ -32,6 +32,7 @@ builder.Services.AddScoped<IMaturityService, MaturityService>();
 builder.Services.AddScoped<ICarbonService, CarbonService>();
 builder.Services.AddSingleton<IFeatureFlagService, FeatureFlagService>();
 builder.Services.AddSingleton<IThemeService, ThemeService>();
+builder.Services.AddSingleton<ICopilotService, CopilotService>();
 
 // Identity + EF Core
 builder.Services.AddDbContext<AppDbContext>(options =>

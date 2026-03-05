@@ -84,6 +84,11 @@
     {
         <MudNavLink Href="themes" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Palette">Themes</MudNavLink>
     }
+
+    @if (FeatureFlagService.Flags.CostQuestions)
+    {
+        <MudNavLink Href="cost-questions" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.QuestionAnswer">Cost Questions</MudNavLink>
+    }
     <MudNavLink Href="admin" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AdminPanelSettings">Admin</MudNavLink>
 </MudNavMenu>
 
