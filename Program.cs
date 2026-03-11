@@ -31,6 +31,7 @@ builder.Services.AddScoped<IRightsizingService, RightsizingService>();
 builder.Services.AddScoped<IMaturityService, MaturityService>();
 builder.Services.AddScoped<ICarbonService, CarbonService>();
 builder.Services.AddScoped<IUpsellService, UpsellService>();
+builder.Services.AddScoped<IReservationService, ReservationService>();
 builder.Services.AddSingleton<IFeatureFlagService, FeatureFlagService>();
 builder.Services.AddSingleton<IThemeService, ThemeService>();
 builder.Services.AddSingleton<ICopilotService, CopilotService>();

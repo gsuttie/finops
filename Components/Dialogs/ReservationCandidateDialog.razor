@@ -1,0 +1,137 @@
+@using FinOps.Models
+@using System.Globalization
+
+<MudDialog>
+    <TitleContent>
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+            <MudIcon Icon="@Icons.Material.Filled.Savings" />
+            <MudText Typo="Typo.h6">@Candidate.ServiceName</MudText>
+            <MudChip T="string" Color="@RecommendationColor" Size="MudBlazor.Size.Small">@Candidate.Recommendation</MudChip>
+        </MudStack>
+    </TitleContent>
+    <DialogContent>
+
+        @* Savings Comparison *@
+        <MudText Typo="Typo.subtitle1" Class="mb-3">Cost Comparison</MudText>
+        <MudTable T="ComparisonRow" Items="@ComparisonRows" Elevation="1" Dense="true" Class="mb-4">
+            <HeaderContent>
+                <MudTh></MudTh>
+                <MudTh>Pay-as-you-go</MudTh>
+                <MudTh>1-Year Reservation</MudTh>
+                <MudTh>3-Year Reservation</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd><strong>@context.Label</strong></MudTd>
+                <MudTd>@context.Payg</MudTd>
+                <MudTd>
+                    <MudText Color="@(context.IsHighlight ? MudBlazor.Color.Success : MudBlazor.Color.Default)">
+                        @context.OneYear
+                    </MudText>
+                </MudTd>
+                <MudTd>
+                    <MudText Color="@(context.IsHighlight ? MudBlazor.Color.Success : MudBlazor.Color.Default)">
+                        @context.ThreeYear
+                    </MudText>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @* Recommendation *@
+        <MudDivider Class="mb-4" />
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Recommendation</MudText>
+        <MudAlert Severity="@RecommendationSeverity" Class="mb-4">
+            @RecommendationText
+        </MudAlert>
+
+        @* What is a reservation *@
+        <MudText Typo="Typo.subtitle1" Class="mb-2">About Azure Reservations</MudText>
+        <MudText Typo="Typo.body2" Color="MudBlazor.Color.Secondary" Class="mb-4">
+            Azure Reservations let you pre-commit to a 1- or 3-year term for specific services in exchange for a significant discount compared to pay-as-you-go pricing.
+            Reservations apply at the billing scope level and automatically offset matching usage — you still pay for any usage beyond the reserved amount at standard rates.
+        </MudText>
+
+        @* Next Steps *@
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Next Steps</MudText>
+        <MudStack Spacing="1">
+            <MudText Typo="Typo.body2">1. Review your current usage patterns in Azure Cost Management to confirm consistent spend.</MudText>
+            <MudText Typo="Typo.body2">2. Check that the workload is stable and not expected to be decommissioned within the reservation term.</MudText>
+            <MudText Typo="Typo.body2">3. Purchase a reservation scoped to the appropriate subscription or shared scope.</MudText>
+        </MudStack>
+        <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Primary" Class="mt-3"
+                   StartIcon="@Icons.Material.Filled.OpenInNew"
+                   Href="https://portal.azure.com/#blade/Microsoft_Azure_Reservations/CreateBlade"
+                   Target="_blank">
+            Buy Reservation in Azure Portal
+        </MudButton>
+
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Close</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public ReservationCandidate Candidate { get; set; } = null!;
+
+    private record ComparisonRow(string Label, string Payg, string OneYear, string ThreeYear, bool IsHighlight = false);
+
+    private IEnumerable<ComparisonRow> ComparisonRows =>
+    [
+        new("Monthly Cost",
+            Fmt(Candidate.MonthlyCost),
+            Fmt(Candidate.MonthlyCost - Candidate.EstimatedMonthlySavingsOneYear),
+            Fmt(Candidate.MonthlyCost - Candidate.EstimatedMonthlySavingsThreeYear)),
+        new("Annual Cost",
+            Fmt(Candidate.AnnualizedCost),
+            Fmt(Candidate.AnnualizedCost - Candidate.EstimatedAnnualSavingsOneYear),
+            Fmt(Candidate.AnnualizedCost - Candidate.EstimatedAnnualSavingsThreeYear)),
+        new("Annual Savings",
+            "—",
+            Fmt(Candidate.EstimatedAnnualSavingsOneYear),
+            Fmt(Candidate.EstimatedAnnualSavingsThreeYear),
+            IsHighlight: true),
+        new("Discount",
+            "—",
+            $"{Candidate.OneYearSavingPercent}%",
+            $"{Candidate.ThreeYearSavingPercent}%",
+            IsHighlight: true),
+    ];
+
+    private MudBlazor.Color RecommendationColor => Candidate.Recommendation switch
+    {
+        "Buy 3-Year" => MudBlazor.Color.Success,
+        "Buy 1-Year" => MudBlazor.Color.Info,
+        _            => MudBlazor.Color.Warning
+    };
+
+    private Severity RecommendationSeverity => Candidate.Recommendation switch
+    {
+        "Buy 3-Year" => Severity.Success,
+        "Buy 1-Year" => Severity.Info,
+        _            => Severity.Warning
+    };
+
+    private string RecommendationText => Candidate.Recommendation switch
+    {
+        "Buy 3-Year" =>
+            $"Your monthly spend of {Fmt(Candidate.MonthlyCost)} on {Candidate.ServiceName} strongly justifies a 3-year Azure Reservation. " +
+            $"At a {Candidate.ThreeYearSavingPercent}% discount, your annual cost would fall from {Fmt(Candidate.AnnualizedCost)} to " +
+            $"{Fmt(Candidate.AnnualizedCost - Candidate.EstimatedAnnualSavingsThreeYear)}, " +
+            $"saving you {Fmt(Candidate.EstimatedAnnualSavingsThreeYear)} per year — {Fmt(Candidate.EstimatedAnnualSavingsThreeYear * 3)} over the full 3-year term.",
+        "Buy 1-Year" =>
+            $"Your monthly spend of {Fmt(Candidate.MonthlyCost)} on {Candidate.ServiceName} makes a 1-year Azure Reservation worthwhile. " +
+            $"At a {Candidate.OneYearSavingPercent}% discount, you would save {Fmt(Candidate.EstimatedAnnualSavingsOneYear)} over the next 12 months. " +
+            $"If usage remains stable after the term, consider upgrading to a 3-year reservation for even greater savings ({Candidate.ThreeYearSavingPercent}% off).",
+        _ =>
+            $"Your monthly spend of {Fmt(Candidate.MonthlyCost)} on {Candidate.ServiceName} is relatively low but still qualifies for a reservation. " +
+            $"Monitor this workload — if spend grows above {Fmt(100m, "C0")} per month, a 1-year reservation becomes a straightforward saving. " +
+            $"A 1-year commitment would currently save {Fmt(Candidate.EstimatedAnnualSavingsOneYear)} annually at {Candidate.OneYearSavingPercent}% off.",
+    };
+
+    private string Fmt(decimal amount, string? format = null) =>
+        amount.ToString(format ?? "C2", CultureInfo.CreateSpecificCulture(Candidate.Currency == "GBP" ? "en-GB" : "en-US"));
+}

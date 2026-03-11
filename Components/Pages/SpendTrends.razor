@@ -36,12 +36,17 @@
     </MudStack>
 </MudPaper>
 
-<MudTable T="TenantSubscription" Items="@_subscriptions" Loading="@_loading"
+<MudTable T="TenantSubscription" Items="@_filteredSubscriptions" Loading="@_loading"
           Hover="true" Dense="true" Elevation="2" Class="mb-4"
           RowClassFunc="@((sub, _) => sub == _selectedSubscription ? "mud-selected-item" : "")"
           OnRowClick="@OnRowClick">
     <ToolBarContent>
-        <MudText Typo="Typo.h6">Select a Subscription</MudText>
+        <MudText Typo="Typo.h6">Subscriptions</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_searchText" Placeholder="Search subscriptions..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="MudBlazor.Size.Medium" Immediate="true"
+                      Class="mr-4" Style="max-width: 300px;" />
     </ToolBarContent>
     <HeaderContent>
         <MudTh>Tenant</MudTh>
@@ -52,10 +57,17 @@
     <RowTemplate>
         <MudTd DataLabel="Tenant">
             <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
+            <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.TenantId</MudText>
         </MudTd>
-        <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+        <MudTd DataLabel="Name">
+            <MudLink Href="@GetAzurePortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                @context.DisplayName
+            </MudLink>
+        </MudTd>
         <MudTd DataLabel="Subscription ID">
-            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+            <MudLink Href="@GetAzurePortalUrl(context)" Target="_blank" Typo="Typo.body2" Style="font-family: monospace;">
+                @context.SubscriptionId
+            </MudLink>
         </MudTd>
         <MudTd DataLabel="State">
             <MudChip T="string" Color="@GetStateColor(context.State)" Size="MudBlazor.Size.Small">
@@ -63,6 +75,12 @@
             </MudChip>
         </MudTd>
     </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No subscriptions found.</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
 </MudTable>
 
 @if (_selectedSubscription is not null)
@@ -241,6 +259,16 @@ else
     private bool _loadingAnalysis;
     private string? _loadError;
     private string? _homeTenantDisplayName;
+    private string _searchText = string.Empty;
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _subscriptions
+            : _subscriptions.Where(s =>
+                s.DisplayName.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.TenantId.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
 
     private record DailyComparisonRow(string Day, decimal? CurrentCost, decimal? PreviousCost, bool HasAnomaly);
 
@@ -277,6 +305,9 @@ else
         _selectedSubscription = args.Item;
         await LoadAnalysis();
     }
+
+    private static string GetAzurePortalUrl(TenantSubscription sub) =>
+        $"https://portal.azure.com/#@{sub.TenantId}/resource/subscriptions/{sub.SubscriptionId}/overview";
 
     private async Task LoadAnalysis()
     {

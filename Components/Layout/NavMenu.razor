@@ -99,6 +99,11 @@
     {
         <MudNavLink Href="upsell" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.TrendingUp">Upsell Opportunities</MudNavLink>
     }
+
+    @if (FeatureFlagService.Flags.ReservationCandidates)
+    {
+        <MudNavLink Href="costs/reservation-candidates" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Savings">Reservation Candidates</MudNavLink>
+    }
     <MudNavLink Href="admin" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AdminPanelSettings">Admin</MudNavLink>
 </MudNavMenu>
 
