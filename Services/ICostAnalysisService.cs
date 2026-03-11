@@ -49,4 +49,9 @@ public interface ICostAnalysisService
     /// </summary>
     Task<CostDashboardData> GetDashboardDataAsync(
         TenantSubscription subscription);
+
+    /// <summary>
+    /// Analyses spend trends: current month vs previous month and vs 3-month average, with anomaly detection
+    /// </summary>
+    Task<SpendTrendAnalysis> GetSpendTrendAnalysisAsync(TenantSubscription subscription);
 }

@@ -1,0 +1,385 @@
+@page "/costs/spend-trends"
+@using FinOps.Models
+@using FinOps.Services
+@using FinOps.Components.Dialogs
+@using System.Globalization
+@inject IAzureSubscriptionService SubscriptionService
+@inject ICostAnalysisService CostAnalysisService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ILogger<SpendTrends> Logger
+
+<PageTitle>Spend Trends</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Spend Trend Analysis</MudText>
+
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small"
+                     OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudTable T="TenantSubscription" Items="@_subscriptions" Loading="@_loading"
+          Hover="true" Dense="true" Elevation="2" Class="mb-4"
+          RowClassFunc="@((sub, _) => sub == _selectedSubscription ? "mud-selected-item" : "")"
+          OnRowClick="@OnRowClick">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Select a Subscription</MudText>
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
+        </MudTd>
+        <MudTd DataLabel="Name">@context.DisplayName</MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudText Typo="Typo.body2" Style="font-family: monospace;">@context.SubscriptionId</MudText>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="MudBlazor.Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+@if (_selectedSubscription is not null)
+{
+    if (_loadingAnalysis)
+    {
+        <div style="text-align: center; padding: 60px;">
+            <MudProgressCircular Indeterminate="true" Size="MudBlazor.Size.Large" />
+            <MudText Typo="Typo.h6" Color="MudBlazor.Color.Secondary" Class="mt-4">Analysing spend trends...</MudText>
+        </div>
+    }
+    else if (_analysis is not null)
+    {
+        @* KPI Cards *@
+        <MudGrid Spacing="3" Class="mb-4">
+            <MudItem xs="12" sm="4">
+                <MudPaper Class="pa-4" Elevation="2" Style="border-left: 4px solid #4caf50;">
+                    <MudText Typo="Typo.overline" Color="MudBlazor.Color.Secondary">Current Month (MTD)</MudText>
+                    <MudText Typo="Typo.h5" Class="mt-2">@FormatCurrency(_analysis.CurrentMonthTotal, _analysis.Currency)</MudText>
+                    <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">@_analysis.Currency</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                @{
+                    var vsPrevColor = _analysis.ChangeVsPreviousMonth > 0 ? "#f44336" : "#4caf50";
+                    var vsPrevIcon = _analysis.ChangeVsPreviousMonth > 0
+                        ? Icons.Material.Filled.TrendingUp
+                        : Icons.Material.Filled.TrendingDown;
+                    var vsPrevMudColor = _analysis.ChangeVsPreviousMonth > 0
+                        ? MudBlazor.Color.Error
+                        : MudBlazor.Color.Success;
+                }
+                <MudPaper Class="pa-4" Elevation="2" Style="@($"border-left: 4px solid {vsPrevColor};")">
+                    <MudText Typo="Typo.overline" Color="MudBlazor.Color.Secondary">vs Previous Month</MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2">
+                        <MudIcon Icon="@vsPrevIcon" Color="@vsPrevMudColor" />
+                        <MudText Typo="Typo.h5" Color="@vsPrevMudColor">
+                            @(_analysis.ChangeVsPreviousMonth > 0 ? "+" : "")@_analysis.ChangeVsPreviousMonth.ToString("F1")%
+                        </MudText>
+                    </MudStack>
+                    <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">
+                        Prev: @FormatCurrency(_analysis.PreviousMonthTotal, _analysis.Currency)
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                @{
+                    var vs3mColor = _analysis.ChangeVsThreeMonthAverage > 0 ? "#f44336" : "#4caf50";
+                    var vs3mIcon = _analysis.ChangeVsThreeMonthAverage > 0
+                        ? Icons.Material.Filled.TrendingUp
+                        : Icons.Material.Filled.TrendingDown;
+                    var vs3mMudColor = _analysis.ChangeVsThreeMonthAverage > 0
+                        ? MudBlazor.Color.Error
+                        : MudBlazor.Color.Success;
+                }
+                <MudPaper Class="pa-4" Elevation="2" Style="@($"border-left: 4px solid {vs3mColor};")">
+                    <MudText Typo="Typo.overline" Color="MudBlazor.Color.Secondary">vs 4-Month Average</MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mt-2">
+                        <MudIcon Icon="@vs3mIcon" Color="@vs3mMudColor" />
+                        <MudText Typo="Typo.h5" Color="@vs3mMudColor">
+                            @(_analysis.ChangeVsThreeMonthAverage > 0 ? "+" : "")@_analysis.ChangeVsThreeMonthAverage.ToString("F1")%
+                        </MudText>
+                    </MudStack>
+                    <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">
+                        4M Avg: @FormatCurrency(_analysis.ThreeMonthAverage, _analysis.Currency)
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* Month Comparison Table *@
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Monthly Summary</MudText>
+            <MudTable T="(string Label, decimal Total)" Items="@MonthSummaryRows" Elevation="0" Dense="true">
+                <HeaderContent>
+                    <MudTh>Period</MudTh>
+                    <MudTh>Total Cost</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Period"><strong>@context.Label</strong></MudTd>
+                    <MudTd DataLabel="Total Cost">@FormatCurrency(context.Total, _analysis.Currency)</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudPaper>
+
+        @* Daily Spend Comparison *@
+        @if (_analysis.CurrentMonthDailyData.Count > 0)
+        {
+            <MudPaper Class="pa-4 mb-4" Elevation="2">
+                <MudText Typo="Typo.h6" Class="mb-3">Daily Spend Comparison</MudText>
+                <MudTable T="DailyComparisonRow" Items="@DailyComparisonRows" Elevation="0" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Day</MudTh>
+                        <MudTh>Previous Month</MudTh>
+                        <MudTh>Current Month</MudTh>
+                        <MudTh>Anomaly</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Day">@context.Day</MudTd>
+                        <MudTd DataLabel="Previous Month">
+                            @(context.PreviousCost.HasValue ? FormatCurrency(context.PreviousCost.Value, _analysis.Currency) : "—")
+                        </MudTd>
+                        <MudTd DataLabel="Current Month">
+                            @(context.CurrentCost.HasValue ? FormatCurrency(context.CurrentCost.Value, _analysis.Currency) : "—")
+                        </MudTd>
+                        <MudTd DataLabel="Anomaly">
+                            @if (context.HasAnomaly)
+                            {
+                                <MudText Typo="Typo.body2" Style="color: #f44336; font-weight: 600;">anomaly - review below</MudText>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        }
+
+        @* Anomalies *@
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Spending Anomalies</MudText>
+            @if (_analysis.Anomalies.Count == 0)
+            {
+                <MudAlert Severity="Severity.Success" Dense="true">No anomalies detected in the current month.</MudAlert>
+            }
+            else
+            {
+                <MudTable T="SpendAnomaly" Items="@_analysis.Anomalies" Elevation="0" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Actual Cost</MudTh>
+                        <MudTh>Expected Cost</MudTh>
+                        <MudTh>Deviation (%)</MudTh>
+                        <MudTh>Severity</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Date">@context.Date.ToString("dd MMM yyyy")</MudTd>
+                        <MudTd DataLabel="Actual Cost">@FormatCurrency(context.ActualCost, context.Currency)</MudTd>
+                        <MudTd DataLabel="Expected Cost">@FormatCurrency(context.ExpectedCost, context.Currency)</MudTd>
+                        <MudTd DataLabel="Deviation">
+                            @{
+                                var pct = context.ExpectedCost > 0
+                                    ? (context.ActualCost - context.ExpectedCost) / context.ExpectedCost * 100
+                                    : 0m;
+                                var pctColor = pct >= 25 ? "color: #f44336; font-weight: 600;" : "";
+                            }
+                            <span style="@pctColor">@(context.ExpectedCost > 0 ? $"+{pct.ToString("F1")}%" : "—")</span>
+                        </MudTd>
+                        <MudTd DataLabel="Severity">
+                            <MudChip T="string" Color="@GetSeverityColor(context.Severity)" Size="MudBlazor.Size.Small">
+                                @context.Severity
+                            </MudChip>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+    }
+    else if (_loadError is not null)
+    {
+        <MudAlert Severity="Severity.Error">Failed to load trend analysis: @_loadError</MudAlert>
+    }
+}
+else
+{
+    <MudPaper Class="pa-6" Elevation="2">
+        <MudText Typo="Typo.h6" Color="MudBlazor.Color.Secondary" Align="Align.Center">
+            Select a subscription above to view its spend trend analysis.
+        </MudText>
+    </MudPaper>
+}
+
+@code {
+    private List<TenantSubscription> _subscriptions = [];
+    private TenantSubscription? _selectedSubscription;
+    private SpendTrendAnalysis? _analysis;
+    private bool _loading = true;
+    private bool _loadingAnalysis;
+    private string? _loadError;
+    private string? _homeTenantDisplayName;
+
+    private record DailyComparisonRow(string Day, decimal? CurrentCost, decimal? PreviousCost, bool HasAnomaly);
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load subscriptions");
+            Snackbar.Add("Failed to load subscriptions.", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OnRowClick(TableRowClickEventArgs<TenantSubscription> args)
+    {
+        if (args.Item == _selectedSubscription)
+            return;
+
+        _selectedSubscription = args.Item;
+        await LoadAnalysis();
+    }
+
+    private async Task LoadAnalysis()
+    {
+        if (_selectedSubscription is null)
+            return;
+
+        _loadingAnalysis = true;
+        _analysis = null;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            _analysis = await CostAnalysisService.GetSpendTrendAnalysisAsync(_selectedSubscription);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load spend trend analysis");
+            _loadError = ex.Message;
+            Snackbar.Add("Failed to load spend trend analysis.", Severity.Error);
+        }
+        finally
+        {
+            _loadingAnalysis = false;
+            StateHasChanged();
+        }
+    }
+
+    private IEnumerable<(string Label, decimal Total)> MonthSummaryRows =>
+        _analysis is null
+            ? []
+            : new[]
+            {
+                ("Current Month (MTD)", _analysis.CurrentMonthTotal),
+                ("Previous Month", _analysis.PreviousMonthTotal),
+                ("4-Month Average", _analysis.ThreeMonthAverage)
+            };
+
+    private IEnumerable<DailyComparisonRow> DailyComparisonRows
+    {
+        get
+        {
+            if (_analysis is null)
+                yield break;
+
+            var currentByDay = _analysis.CurrentMonthDailyData.ToDictionary(d => d.Date.Day);
+            var prevByDay = _analysis.PreviousMonthDailyData.ToDictionary(d => d.Date.Day);
+            var anomalyDays = _analysis.Anomalies.Select(a => a.Date.Day).ToHashSet();
+
+            var allDays = currentByDay.Keys.Union(prevByDay.Keys).OrderBy(d => d);
+            foreach (var day in allDays)
+            {
+                currentByDay.TryGetValue(day, out var curr);
+                prevByDay.TryGetValue(day, out var prev);
+                var label = curr?.Date.ToString("dd MMM") ?? prev?.Date.AddMonths(1).ToString("dd MMM") ?? day.ToString();
+                yield return new DailyComparisonRow(
+                    label,
+                    curr?.Cost,
+                    prev?.Cost,
+                    anomalyDays.Contains(day));
+            }
+        }
+    }
+
+    private static MudBlazor.Color GetSeverityColor(string severity) => severity switch
+    {
+        "High" => MudBlazor.Color.Error,
+        "Medium" => MudBlazor.Color.Warning,
+        "Low" => MudBlazor.Color.Info,
+        _ => MudBlazor.Color.Default
+    };
+
+    private static MudBlazor.Color GetStateColor(string? state) => state switch
+    {
+        "Enabled" => MudBlazor.Color.Success,
+        "Disabled" => MudBlazor.Color.Error,
+        "Warned" => MudBlazor.Color.Warning,
+        _ => MudBlazor.Color.Default
+    };
+
+    private static string FormatCurrency(decimal amount, string currency)
+    {
+        var culture = currency == "GBP" ? "en-GB" : "en-US";
+        return amount.ToString("C2", CultureInfo.CreateSpecificCulture(culture));
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var dialog = await DialogService.ShowAsync<ConnectTenantDialog>("Connect Tenant");
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            TenantClientManager.ConnectTenant(tenantId);
+            Snackbar.Add($"Connected to tenant: {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant: {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+}

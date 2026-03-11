@@ -22,6 +22,11 @@
         </MudNavGroup>
     }
 
+    @if (FeatureFlagService.Flags.SpendTrends)
+    {
+        <MudNavLink Href="costs/spend-trends" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.ShowChart">Spend Trends</MudNavLink>
+    }
+
     @if (FeatureFlagService.Flags.Tagging)
     {
         <MudNavGroup Title="Tagging" Icon="@Icons.Material.Filled.Label" Expanded="true">

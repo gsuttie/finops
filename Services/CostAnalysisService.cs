@@ -269,6 +269,86 @@ public class CostAnalysisService(
         };
     }
 
+    public async Task<SpendTrendAnalysis> GetSpendTrendAnalysisAsync(TenantSubscription subscription)
+    {
+        var now = DateTime.UtcNow;
+        var currentMonthStart = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
+        var prevMonthStart = currentMonthStart.AddMonths(-1);
+        var fourMonthsStart = currentMonthStart.AddMonths(-4);
+
+        // Batch 1: current and previous month
+        var currentMonthTask = GetCostsAsync(subscription.SubscriptionId, subscription.TenantId, currentMonthStart, now);
+        var prevMonthTask = GetCostsAsync(subscription.SubscriptionId, subscription.TenantId, prevMonthStart, currentMonthStart.AddDays(-1));
+        await Task.WhenAll(currentMonthTask, prevMonthTask);
+        await Task.Delay(500);
+
+        // Batch 2: 4-month history
+        var fourMonthResult = await GetCostsAsync(subscription.SubscriptionId, subscription.TenantId, fourMonthsStart, currentMonthStart.AddDays(-1));
+
+        var current = await currentMonthTask;
+        var prev = await prevMonthTask;
+
+        // Calculate 4-month average (split into monthly buckets)
+        var monthlyTotals = new decimal[4];
+        for (int i = 0; i < 4; i++)
+        {
+            var ms = currentMonthStart.AddMonths(-(4 - i));
+            var me = currentMonthStart.AddMonths(-(3 - i));
+            monthlyTotals[i] = fourMonthResult.Data.Where(d => d.Date >= ms && d.Date < me).Sum(d => d.Cost);
+        }
+        var fourMonthAvg = monthlyTotals.Average();
+
+        // Anomaly detection: use 4-month daily data as baseline
+        var priorDailyCosts = fourMonthResult.Data.Select(d => d.Cost).ToList();
+        var anomalies = new List<SpendAnomaly>();
+        if (priorDailyCosts.Count > 1)
+        {
+            var mean = priorDailyCosts.Average();
+            var stdDev = Math.Sqrt(priorDailyCosts.Sum(c => Math.Pow((double)(c - mean), 2)) / priorDailyCosts.Count);
+
+            foreach (var point in current.Data)
+            {
+                if (stdDev > 0)
+                {
+                    var sigmas = (double)(point.Cost - mean) / stdDev;
+                    if (sigmas >= 1.5)
+                    {
+                        anomalies.Add(new SpendAnomaly
+                        {
+                            Date = point.Date,
+                            ActualCost = point.Cost,
+                            ExpectedCost = mean,
+                            StandardDeviations = (decimal)sigmas,
+                            Severity = sigmas >= 3 ? "High" : sigmas >= 2 ? "Medium" : "Low",
+                            Currency = current.Currency
+                        });
+                    }
+                }
+            }
+        }
+
+        var prevTotal = prev.TotalCost;
+        var currTotal = current.TotalCost;
+        var changeVsPrev = prevTotal > 0 ? Math.Round(((currTotal - prevTotal) / prevTotal) * 100, 1) : 0m;
+        var changeVs3m = fourMonthAvg > 0 ? Math.Round(((currTotal - fourMonthAvg) / fourMonthAvg) * 100, 1) : 0m;
+
+        return new SpendTrendAnalysis
+        {
+            SubscriptionId = subscription.SubscriptionId,
+            SubscriptionName = subscription.DisplayName,
+            Currency = current.Currency,
+            CurrentMonthTotal = currTotal,
+            PreviousMonthTotal = prevTotal,
+            ThreeMonthAverage = Math.Round(fourMonthAvg, 2),
+            ChangeVsPreviousMonth = changeVsPrev,
+            ChangeVsThreeMonthAverage = changeVs3m,
+            CurrentMonthDailyData = current.Data,
+            PreviousMonthDailyData = prev.Data,
+            ThreeMonthDailyData = fourMonthResult.Data,
+            Anomalies = anomalies.OrderBy(a => a.Date).ToList()
+        };
+    }
+
     private async Task<decimal> GetCurrentMonthSpendAsync(
         TenantSubscription subscription,
         DateTime monthStart,
