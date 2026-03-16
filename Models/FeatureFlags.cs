@@ -20,4 +20,5 @@ public class FeatureFlags
     public bool Upsell { get; set; } = true;
     public bool SpendTrends { get; set; } = true;
     public bool ReservationCandidates { get; set; } = true;
+    public bool HybridBenefit { get; set; } = true;
 }

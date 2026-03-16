@@ -1,0 +1,327 @@
+@page "/budgets/overview"
+@using FinOps.Models
+@using FinOps.Services
+@inject IAzureSubscriptionService SubscriptionService
+@inject IBudgetService BudgetService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ILogger<BudgetOverview> Logger
+
+<PageTitle>Budget Overview</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Budget Overview</MudText>
+
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="Color.Secondary" Size="Size.Small" OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudTextField T="string" @bind-Value="_searchText" Placeholder="Search subscriptions..."
+              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+              Immediate="true" Class="mb-4" Style="max-width: 400px;" />
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate="true" Class="mb-4" />
+    <MudText>@_loadingMessage</MudText>
+}
+else if (_loadError is not null)
+{
+    <MudAlert Severity="Severity.Error">@_loadError</MudAlert>
+}
+else if (!_filteredSubscriptions.Any())
+{
+    <MudText>No subscriptions found.</MudText>
+}
+else
+{
+    <MudExpansionPanels MultiExpansion="true">
+        @foreach (var sub in _filteredSubscriptions)
+        {
+            var budgets = _budgetsBySubscription.TryGetValue(sub.SubscriptionId, out var b) ? b : [];
+
+            <MudExpansionPanel @bind-Expanded="@_panelExpanded[sub.SubscriptionId]">
+                <TitleContent>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                        <MudText Typo="Typo.body1"><strong>@sub.DisplayName</strong></MudText>
+                        <MudChip T="string" Color="Color.Secondary" Size="Size.Small" Variant="Variant.Outlined">
+                            @sub.TenantDisplayName
+                        </MudChip>
+                        <MudBadge Content="@budgets.Count" Color="@(budgets.Count > 0 ? Color.Primary : Color.Default)"
+                                  Overlap="false" Origin="Origin.CenterRight">
+                            <MudText Typo="Typo.caption">budgets</MudText>
+                        </MudBadge>
+                    </MudStack>
+                </TitleContent>
+                <ChildContent>
+                    @if (budgets.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="pa-2" Color="Color.Secondary">No budgets found for this subscription.</MudText>
+                    }
+                    else
+                    {
+                        <MudTable T="BudgetInfo" Items="@budgets" Hover="true" Dense="true" Elevation="0"
+                                  GroupBy="_budgetGroupDef">
+                            <GroupHeaderTemplate>
+                                <MudTh Class="mud-table-cell-custom-group" colspan="7">
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudIcon Icon="@(context.Key?.ToString() == "Subscription" ? Icons.Material.Filled.Subscriptions : Icons.Material.Filled.FolderOpen)"
+                                                 Size="Size.Small" Color="Color.Secondary" />
+                                        <MudText Typo="Typo.subtitle2">@context.Key</MudText>
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                                            @context.Items.Count()
+                                        </MudChip>
+                                    </MudStack>
+                                </MudTh>
+                            </GroupHeaderTemplate>
+                            <HeaderContent>
+                                <MudTh>Name</MudTh>
+                                <MudTh>Amount</MudTh>
+                                <MudTh>Time Grain</MudTh>
+                                <MudTh>Current Spend</MudTh>
+                                <MudTh>Start Date</MudTh>
+                                <MudTh>End Date</MudTh>
+                                <MudTh>Actions</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Name">
+                                    <MudLink Href="@GetBudgetPortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                                        @context.Name
+                                    </MudLink>
+                                </MudTd>
+                                <MudTd DataLabel="Amount">@(context.Amount?.ToString("C2"))</MudTd>
+                                <MudTd DataLabel="Time Grain">@context.TimeGrain</MudTd>
+                                <MudTd DataLabel="Current Spend">
+                                    @if (context.CurrentSpend.HasValue && context.Amount.HasValue && context.Amount.Value > 0)
+                                    {
+                                        var pct = context.CurrentSpend.Value / context.Amount.Value * 100;
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                            <MudText Typo="Typo.body2">@context.CurrentSpend.Value.ToString("C2")</MudText>
+                                            <MudChip T="string" Size="Size.Small"
+                                                     Color="@(pct > 90 ? Color.Error : pct > 70 ? Color.Warning : Color.Success)">
+                                                @pct.ToString("F0")%
+                                            </MudChip>
+                                        </MudStack>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2">@(context.CurrentSpend?.ToString("C2") ?? "-")</MudText>
+                                    }
+                                </MudTd>
+                                <MudTd DataLabel="Start Date">@(context.StartDate?.ToString("dd MMM yyyy") ?? "-")</MudTd>
+                                <MudTd DataLabel="End Date">@(context.EndDate?.ToString("dd MMM yyyy") ?? "-")</MudTd>
+                                <MudTd DataLabel="Actions">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Primary"
+                                                   Size="Size.Small" OnClick="@(() => EditBudget(context, sub))" />
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                                                   Size="Size.Small" OnClick="@(() => DeleteBudget(context, sub))" />
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </ChildContent>
+            </MudExpansionPanel>
+        }
+    </MudExpansionPanels>
+}
+
+@code {
+    private readonly TableGroupDefinition<BudgetInfo> _budgetGroupDef = new()
+    {
+        Expandable = false,
+        Selector = b => string.IsNullOrEmpty(b.ResourceGroupName) ? "Subscription" : b.ResourceGroupName
+    };
+
+    private List<TenantSubscription> _subscriptions = [];
+    private Dictionary<string, List<BudgetInfo>> _budgetsBySubscription = new();
+    private Dictionary<string, bool> _panelExpanded = new();
+    private bool _loading = true;
+    private string _loadingMessage = "Loading subscriptions...";
+    private string? _loadError;
+    private string _searchText = string.Empty;
+    private string? _homeTenantDisplayName;
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _subscriptions
+            : _subscriptions.Where(s =>
+                s.DisplayName.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.TenantId.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        await LoadAll();
+    }
+
+    private async Task LoadAll()
+    {
+        _loading = true;
+        _loadError = null;
+        _loadingMessage = "Loading subscriptions...";
+        _budgetsBySubscription.Clear();
+        _panelExpanded.Clear();
+        StateHasChanged();
+
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+
+            _loadingMessage = $"Loading budgets for {_subscriptions.Count} subscription(s)...";
+            StateHasChanged();
+
+            var tasks = _subscriptions.Select(async sub =>
+            {
+                try
+                {
+                    var budgets = await BudgetService.GetBudgetsAsync(sub);
+                    return (sub.SubscriptionId, Budgets: budgets.ToList());
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Failed to load budgets for {Sub}", sub.DisplayName);
+                    return (sub.SubscriptionId, Budgets: new List<BudgetInfo>());
+                }
+            });
+
+            var results = await Task.WhenAll(tasks);
+            foreach (var (subId, budgets) in results)
+                _budgetsBySubscription[subId] = budgets;
+
+            _panelExpanded = _subscriptions.ToDictionary(s => s.SubscriptionId, _ => true);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load subscriptions");
+            _loadError = "Failed to load subscriptions.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.ConnectTenantDialog>("Connect Tenant", options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            Snackbar.Add($"Connected to tenant {tenantId}", Severity.Success);
+            await LoadAll();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant {tenantId}", Severity.Info);
+        await LoadAll();
+    }
+
+    private async Task EditBudget(BudgetInfo budget, TenantSubscription subscription)
+    {
+        BudgetFormModel form;
+        try
+        {
+            form = await BudgetService.GetBudgetFormDataAsync(budget);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load budget data");
+            Snackbar.Add("Failed to load budget data.", Severity.Error);
+            return;
+        }
+
+        var parameters = new DialogParameters<FinOps.Components.Dialogs.CreateBudgetDialog>
+        {
+            { x => x.IsEditMode, true },
+            { x => x.ExistingModel, form }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<FinOps.Components.Dialogs.CreateBudgetDialog>("Edit Budget", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: BudgetFormModel updatedForm })
+        {
+            try
+            {
+                await BudgetService.UpdateBudgetAsync(budget, updatedForm);
+                Snackbar.Add($"Budget '{budget.Name}' updated", Severity.Success);
+                await RefreshSubscriptionBudgets(subscription);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Failed to update budget");
+                Snackbar.Add("Failed to update budget.", Severity.Error);
+            }
+        }
+    }
+
+    private async Task DeleteBudget(BudgetInfo budget, TenantSubscription subscription)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Delete Budget",
+            $"Are you sure you want to delete budget '{budget.Name}' from {budget.SubscriptionName}?",
+            yesText: "Delete", cancelText: "Cancel");
+
+        if (confirm != true) return;
+
+        try
+        {
+            await BudgetService.DeleteBudgetAsync(budget);
+            Snackbar.Add($"Budget '{budget.Name}' deleted", Severity.Success);
+            await RefreshSubscriptionBudgets(subscription);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to delete budget");
+            Snackbar.Add("Failed to delete budget.", Severity.Error);
+        }
+    }
+
+    private async Task RefreshSubscriptionBudgets(TenantSubscription subscription)
+    {
+        try
+        {
+            var budgets = await BudgetService.GetBudgetsAsync(subscription);
+            _budgetsBySubscription[subscription.SubscriptionId] = [..budgets];
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to refresh budgets for {Sub}", subscription.DisplayName);
+            Snackbar.Add($"Failed to refresh budgets for {subscription.DisplayName}", Severity.Error);
+        }
+    }
+
+    private static string GetBudgetPortalUrl(BudgetInfo budget)
+    {
+        if (!string.IsNullOrEmpty(budget.ResourceGroupName))
+        {
+            return $"https://portal.azure.com/#@{budget.TenantId}/resource/subscriptions/{budget.SubscriptionId}/resourceGroups/{budget.ResourceGroupName}/providers/Microsoft.Consumption/budgets/{budget.Name}";
+        }
+        return $"https://portal.azure.com/#@{budget.TenantId}/resource/subscriptions/{budget.SubscriptionId}/providers/Microsoft.Consumption/budgets/{budget.Name}";
+    }
+}

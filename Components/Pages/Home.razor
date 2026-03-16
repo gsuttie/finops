@@ -17,17 +17,13 @@
         0%, 100% { text-shadow: 0 0 5px rgba(99, 102, 241, 0.3); }
         50% { text-shadow: 0 0 20px rgba(99, 102, 241, 0.6), 0 0 40px rgba(99, 102, 241, 0.3); }
     }
-    @@keyframes blink {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0; }
+    @@keyframes typing {
+        from { width: 0; }
+        to { width: 100%; }
     }
-    @@keyframes slideInLeft {
-        from { opacity: 0; transform: translateX(-40px); }
-        to { opacity: 1; transform: translateX(0); }
-    }
-    @@keyframes pulse {
-        0%, 100% { transform: scale(1); }
-        50% { transform: scale(1.05); }
+    @@keyframes blinkCaret {
+        0%, 100% { border-color: #6366f1; }
+        50% { border-color: transparent; }
     }
 
     .ascii-art {
@@ -48,14 +44,6 @@
         width: 0;
         max-width: fit-content;
     }
-    @@keyframes typing {
-        from { width: 0; }
-        to { width: 100%; }
-    }
-    @@keyframes blinkCaret {
-        0%, 100% { border-color: #6366f1; }
-        50% { border-color: transparent; }
-    }
 
     .feature-card {
         animation: fadeInUp 0.6s ease-out both;
@@ -66,23 +54,17 @@
         transform: translateY(-4px);
         box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15) !important;
     }
-    .feature-card:nth-child(1) { animation-delay: 1.5s; }
-    .feature-card:nth-child(2) { animation-delay: 1.6s; }
-    .feature-card:nth-child(3) { animation-delay: 1.7s; }
-    .feature-card:nth-child(4) { animation-delay: 1.8s; }
-    .feature-card:nth-child(5) { animation-delay: 1.9s; }
-    .feature-card:nth-child(6) { animation-delay: 2.0s; }
-    .feature-card:nth-child(7) { animation-delay: 2.1s; }
-    .feature-card:nth-child(8) { animation-delay: 2.2s; }
-    .feature-card:nth-child(9) { animation-delay: 2.3s; }
+
+    .section-header {
+        animation: fadeIn 0.5s ease-out both;
+    }
 
     .built-with {
         animation: fadeIn 1s ease-out 2.8s both;
     }
-
 </style>
 
-<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-8">
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-8">
 
     @* ASCII Art Header *@
     <MudPaper Elevation="0" Class="pa-4 mb-6 d-flex justify-center" Style="background: transparent;">
@@ -103,174 +85,372 @@
         </MudText>
     </div>
 
-    @* Feature cards *@
-    <MudGrid Spacing="4" Class="mb-8">
-        @if (FeatureFlagService.Flags.Budgets)
-        {
+    @* Budgets *@
+    @if (FeatureFlagService.Flags.Budgets)
+    {
+        <MudText Typo="Typo.h6" Class="mb-3 section-header" Style="color: var(--mud-palette-text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+            <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-2" Style="vertical-align: middle;" />Budgets
+        </MudText>
+        <MudGrid Spacing="4" Class="mb-6">
             <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="border-top: 3px solid #4caf50;" @onclick='() => Nav.NavigateTo("budgets")'>
+                <MudCard Class="feature-card" Style="border-top: 3px solid #4caf50;" @onclick='() => Nav.NavigateTo("budgets/subscriptions")'>
                     <MudCardContent Class="text-center pa-6">
                         <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Size="Size.Large" Color="Color.Success" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Budgets</MudText>
+                        <MudText Typo="Typo.h6">Subscription Budgets</MudText>
                         <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            Create & monitor budgets across subscriptions
+                            Create &amp; monitor budgets across subscriptions
                         </MudText>
                     </MudCardContent>
                 </MudCard>
             </MudItem>
-        }
-        @if (FeatureFlagService.Flags.CostManagement)
-        {
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Class="feature-card" Style="border-top: 3px solid #4caf50;" @onclick='() => Nav.NavigateTo("budgets/resource-groups")'>
+                    <MudCardContent Class="text-center pa-6">
+                        <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Size="Size.Large" Color="Color.Success" Class="mb-3" />
+                        <MudText Typo="Typo.h6">Resource Group Budgets</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                            Budgets scoped to individual resource groups
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+        <MudDivider Class="mb-6" />
+    }
+
+    @* Cost Management *@
+    @if (FeatureFlagService.Flags.CostManagement)
+    {
+        <MudText Typo="Typo.h6" Class="mb-3 section-header" Style="color: var(--mud-palette-text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+            <MudIcon Icon="@Icons.Material.Filled.AttachMoney" Class="mr-2" Style="vertical-align: middle;" />Cost Management
+        </MudText>
+        <MudGrid Spacing="4" Class="mb-6">
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Class="feature-card" Style="border-top: 3px solid #00bcd4;" @onclick='() => Nav.NavigateTo("dashboard/overview")'>
+                    <MudCardContent Class="text-center pa-6">
+                        <MudIcon Icon="@Icons.Material.Filled.Dashboard" Size="Size.Large" Color="Color.Info" Class="mb-3" />
+                        <MudText Typo="Typo.h6">Overview Dashboard</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                            High-level cost overview across all subscriptions
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
             <MudItem xs="12" sm="6" md="4">
                 <MudCard Class="feature-card" Style="border-top: 3px solid #00bcd4;" @onclick='() => Nav.NavigateTo("costs/overview")'>
                     <MudCardContent Class="text-center pa-6">
                         <MudIcon Icon="@Icons.Material.Filled.AttachMoney" Size="Size.Large" Color="Color.Info" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Cost Management</MudText>
+                        <MudText Typo="Typo.h6">Cost Overview</MudText>
                         <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            Analyze costs, forecasts & identify savings
+                            Analyze costs, forecasts &amp; identify savings
                         </MudText>
                     </MudCardContent>
                 </MudCard>
             </MudItem>
-        }
-        @if (FeatureFlagService.Flags.Tagging)
-        {
+            <MudItem xs="12" sm="6" md="4">
+                <MudCard Class="feature-card" Style="border-top: 3px solid #00bcd4;" @onclick='() => Nav.NavigateTo("costs/dashboard")'>
+                    <MudCardContent Class="text-center pa-6">
+                        <MudIcon Icon="@Icons.Material.Filled.BarChart" Size="Size.Large" Color="Color.Info" Class="mb-3" />
+                        <MudText Typo="Typo.h6">Cost Dashboard</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                            Detailed cost breakdown and trend analysis
+                        </MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+        <MudDivider Class="mb-6" />
+    }
+
+    @* Tagging *@
+    @if (FeatureFlagService.Flags.Tagging)
+    {
+        <MudText Typo="Typo.h6" Class="mb-3 section-header" Style="color: var(--mud-palette-text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+            <MudIcon Icon="@Icons.Material.Filled.Label" Class="mr-2" Style="vertical-align: middle;" />Tagging
+        </MudText>
+        <MudGrid Spacing="4" Class="mb-6">
             <MudItem xs="12" sm="6" md="4">
                 <MudCard Class="feature-card" Style="border-top: 3px solid #2196f3;" @onclick='() => Nav.NavigateTo("tagging")'>
                     <MudCardContent Class="text-center pa-6">
                         <MudIcon Icon="@Icons.Material.Filled.Label" Size="Size.Large" Color="Color.Info" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Tagging</MudText>
+                        <MudText Typo="Typo.h6">Resource Tagging</MudText>
                         <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            Apply & remove tags on resource groups at scale
+                            Apply &amp; remove tags on resource groups at scale
                         </MudText>
                     </MudCardContent>
                 </MudCard>
             </MudItem>
-        }
-        @if (FeatureFlagService.Flags.Policy)
-        {
             <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="border-top: 3px solid #ff9800;" @onclick='() => Nav.NavigateTo("policy")'>
+                <MudCard Class="feature-card" Style="border-top: 3px solid #2196f3;" @onclick='() => Nav.NavigateTo("tagging/costs")'>
                     <MudCardContent Class="text-center pa-6">
-                        <MudIcon Icon="@Icons.Material.Filled.Policy" Size="Size.Large" Color="Color.Warning" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Policy</MudText>
+                        <MudIcon Icon="@Icons.Material.Filled.Sell" Size="Size.Large" Color="Color.Info" Class="mb-3" />
+                        <MudText Typo="Typo.h6">Costs by Tagging</MudText>
                         <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            Tag inheritance policies with auto identity setup
+                            View cost breakdowns by tag values
                         </MudText>
                     </MudCardContent>
                 </MudCard>
             </MudItem>
-        }
-        @if (FeatureFlagService.Flags.Advisor)
-        {
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="border-top: 3px solid #e91e63;" @onclick='() => Nav.NavigateTo("advisor")'>
-                    <MudCardContent Class="text-center pa-6">
-                        <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Large" Color="Color.Error" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Advisor</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            Cost, performance & reliability recommendations
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-        }
-        @if (FeatureFlagService.Flags.OrphanedResources)
-        {
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="border-top: 3px solid #f44336;" @onclick='() => Nav.NavigateTo("orphaned-resources")'>
-                    <MudCardContent Class="text-center pa-6">
-                        <MudIcon Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Large" Color="Color.Error" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Orphaned Resources</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            Find and clean up unused resources
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-        }
-        @if (FeatureFlagService.Flags.Security)
-        {
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="border-top: 3px solid #673ab7;" @onclick='() => Nav.NavigateTo("security-recommendations")'>
-                    <MudCardContent Class="text-center pa-6">
-                        <MudIcon Icon="@Icons.Material.Filled.Security" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Security</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            Security recommendations from Defender
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-        }
-        @if (FeatureFlagService.Flags.ServiceRetirements)
-        {
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="border-top: 3px solid #ff5722;" @onclick='() => Nav.NavigateTo("service-retirements")'>
-                    <MudCardContent Class="text-center pa-6">
-                        <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Large" Color="Color.Warning" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Service Retirements</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            Track upcoming Azure service retirements
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-        }
-        @if (FeatureFlagService.Flags.LoggingUsage)
-        {
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="border-top: 3px solid #009688;" @onclick='() => Nav.NavigateTo("logging-usage")'>
-                    <MudCardContent Class="text-center pa-6">
-                        <MudIcon Icon="@Icons.Material.Filled.BarChart" Size="Size.Large" Color="Color.Tertiary" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Logging Usage</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            Monitor Log Analytics workspace usage & costs
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-        }
-        @if (FeatureFlagService.Flags.Rightsizing)
-        {
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="border-top: 3px solid #8bc34a;" @onclick='() => Nav.NavigateTo("rightsizing")'>
-                    <MudCardContent Class="text-center pa-6">
-                        <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Large" Color="Color.Success" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Rightsizing</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            VM &amp; compute rightsizing recommendations to reduce costs
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-        }
-        @if (FeatureFlagService.Flags.Upsell)
-        {
-            <MudItem xs="12" sm="6" md="4">
-                <MudCard Class="feature-card" Style="border-top: 3px solid #ff6f00;" @onclick='() => Nav.NavigateTo("upsell")'>
-                    <MudCardContent Class="text-center pa-6">
-                        <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Large" Style="color: #ff6f00;" Class="mb-3" />
-                        <MudText Typo="Typo.h6">Upsell Opportunities</MudText>
-                        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                            Aggregated improvement findings for customer conversations
-                        </MudText>
-                    </MudCardContent>
-                </MudCard>
-            </MudItem>
-        }
-        <MudItem xs="12" sm="6" md="4">
-            <MudCard Class="feature-card" Style="border-top: 3px solid #9c27b0;">
-                <MudCardContent Class="text-center pa-6">
-                    <MudIcon Icon="@Icons.Material.Filled.Hub" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
-                    <MudText Typo="Typo.h6">Multi-Tenant</MudText>
-                    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-                        Lighthouse + connect tenants in one view
-                    </MudText>
-                </MudCardContent>
-            </MudCard>
-        </MudItem>
-    </MudGrid>
+            @if (FeatureFlagService.Flags.Policy)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #ff9800;" @onclick='() => Nav.NavigateTo("policy")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.Policy" Size="Size.Large" Color="Color.Warning" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Policy</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Tag inheritance policies with auto identity setup
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+        <MudDivider Class="mb-6" />
+    }
+
+    @* Monthly Review *@
+    @{
+        var hasMonthlyReview = FeatureFlagService.Flags.SpendTrends || FeatureFlagService.Flags.Advisor ||
+                               FeatureFlagService.Flags.OrphanedResources || FeatureFlagService.Flags.LoggingUsage ||
+                               FeatureFlagService.Flags.Rightsizing || FeatureFlagService.Flags.ReservationCandidates ||
+                               FeatureFlagService.Flags.HybridBenefit;
+    }
+    @if (hasMonthlyReview)
+    {
+        <MudText Typo="Typo.h6" Class="mb-3 section-header" Style="color: var(--mud-palette-text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+            <MudIcon Icon="@Icons.Material.Filled.CalendarMonth" Class="mr-2" Style="vertical-align: middle;" />Monthly Review
+        </MudText>
+        <MudGrid Spacing="4" Class="mb-6">
+            @if (FeatureFlagService.Flags.SpendTrends)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #3f51b5;" @onclick='() => Nav.NavigateTo("costs/spend-trends")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.ShowChart" Size="Size.Large" Color="Color.Primary" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Spend Trends</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Visualise spending patterns over time
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.Advisor)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #e91e63;" @onclick='() => Nav.NavigateTo("advisor")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.Lightbulb" Size="Size.Large" Color="Color.Error" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Advisor</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Cost, performance &amp; reliability recommendations
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.OrphanedResources)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #f44336;" @onclick='() => Nav.NavigateTo("orphaned-resources")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Large" Color="Color.Error" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Orphaned Resources</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Find and clean up unused resources
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.LoggingUsage)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #009688;" @onclick='() => Nav.NavigateTo("logging-usage")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.Analytics" Size="Size.Large" Color="Color.Tertiary" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Logging Usage</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Monitor Log Analytics workspace usage &amp; costs
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.Rightsizing)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #8bc34a;" @onclick='() => Nav.NavigateTo("rightsizing")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Size="Size.Large" Color="Color.Success" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Rightsizing</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                VM &amp; compute rightsizing recommendations to reduce costs
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.ReservationCandidates)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #4caf50;" @onclick='() => Nav.NavigateTo("costs/reservation-candidates")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.Savings" Size="Size.Large" Color="Color.Success" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Reservation Candidates</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Identify resources that would benefit from reservations
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.HybridBenefit)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #00897b;" @onclick='() => Nav.NavigateTo("costs/hybrid-benefit")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.CardGiftcard" Size="Size.Large" Color="Color.Tertiary" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Hybrid Benefit</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Windows VMs eligible for Azure Hybrid Benefit savings
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+        <MudDivider Class="mb-6" />
+    }
+
+    @* Other *@
+    @{
+        var hasOther = FeatureFlagService.Flags.CostQuestions || FeatureFlagService.Flags.Upsell ||
+                       FeatureFlagService.Flags.Security || FeatureFlagService.Flags.PrivateEndpoints ||
+                       FeatureFlagService.Flags.ServiceRetirements || FeatureFlagService.Flags.Maturity ||
+                       FeatureFlagService.Flags.Carbon || FeatureFlagService.Flags.Themes;
+    }
+    @if (hasOther)
+    {
+        <MudText Typo="Typo.h6" Class="mb-3 section-header" Style="color: var(--mud-palette-text-secondary); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+            <MudIcon Icon="@Icons.Material.Filled.MoreHoriz" Class="mr-2" Style="vertical-align: middle;" />Other
+        </MudText>
+        <MudGrid Spacing="4" Class="mb-8">
+            @if (FeatureFlagService.Flags.CostQuestions)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #6366f1;" @onclick='() => Nav.NavigateTo("cost-questions")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.QuestionAnswer" Size="Size.Large" Color="Color.Primary" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Cost Questions</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Ask natural language questions about your Azure costs
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.Upsell)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #ff6f00;" @onclick='() => Nav.NavigateTo("upsell")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.TrendingUp" Size="Size.Large" Style="color: #ff6f00;" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Upsell Opportunities</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Aggregated improvement findings for customer conversations
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.Security)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #673ab7;" @onclick='() => Nav.NavigateTo("security-recommendations")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.Security" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Security</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Security recommendations from Defender
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.PrivateEndpoints)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #0288d1;" @onclick='() => Nav.NavigateTo("private-endpoints")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Large" Color="Color.Info" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Private Endpoints</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Review and manage private endpoint resources
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.ServiceRetirements)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #ff5722;" @onclick='() => Nav.NavigateTo("service-retirements")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.Warning" Size="Size.Large" Color="Color.Warning" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Service Retirements</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Track upcoming Azure service retirements
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.Maturity)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #5c6bc0;" @onclick='() => Nav.NavigateTo("maturity")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.Insights" Size="Size.Large" Color="Color.Primary" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Maturity Score</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Assess your FinOps maturity level
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.Carbon)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #388e3c;" @onclick='() => Nav.NavigateTo("carbon")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.EnergySavingsLeaf" Size="Size.Large" Color="Color.Success" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Carbon</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Track and reduce your Azure carbon footprint
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+            @if (FeatureFlagService.Flags.Themes)
+            {
+                <MudItem xs="12" sm="6" md="4">
+                    <MudCard Class="feature-card" Style="border-top: 3px solid #9c27b0;" @onclick='() => Nav.NavigateTo("themes")'>
+                        <MudCardContent Class="text-center pa-6">
+                            <MudIcon Icon="@Icons.Material.Filled.Palette" Size="Size.Large" Color="Color.Secondary" Class="mb-3" />
+                            <MudText Typo="Typo.h6">Themes</MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+                                Customise the look and feel of the app
+                            </MudText>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            }
+        </MudGrid>
+    }
 
     @* Tech stack bar *@
     <MudPaper Elevation="1" Class="pa-4 mb-6 built-with" Style="border-radius: 12px;">
