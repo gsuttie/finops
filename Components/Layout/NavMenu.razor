@@ -101,6 +101,13 @@
         }
     </MudNavGroup>
 
+    @if (FeatureFlagService.Flags.MonthlyReport)
+    {
+        <MudNavGroup Title="Monthly Report" Icon="@Icons.Material.Filled.Assessment" Expanded="false">
+            <MudNavLink Href="monthly-report/reservation-candidates" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Savings">Reservation Candidates</MudNavLink>
+        </MudNavGroup>
+    }
+
     <MudNavLink Href="admin" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.AdminPanelSettings">Admin</MudNavLink>
 </MudNavMenu>
 

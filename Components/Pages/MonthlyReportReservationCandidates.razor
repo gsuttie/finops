@@ -1,0 +1,356 @@
+@page "/monthly-report/reservation-candidates"
+@using FinOps.Models
+@using FinOps.Services
+@using FinOps.Components.Dialogs
+@using System.Globalization
+@inject IAzureSubscriptionService SubscriptionService
+@inject IReservationService ReservationService
+@inject TenantClientManager TenantClientManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject ILogger<MonthlyReportReservationCandidates> Logger
+
+<PageTitle>Monthly Report - Reservation Candidates</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Reservation Candidates</MudText>
+
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="flex-wrap">
+        @if (!string.IsNullOrEmpty(_homeTenantDisplayName))
+        {
+            <MudChip T="string" Color="MudBlazor.Color.Primary" Size="MudBlazor.Size.Small" Variant="Variant.Outlined">
+                @_homeTenantDisplayName
+            </MudChip>
+        }
+        @foreach (var tenantId in TenantClientManager.ConnectedTenantIds)
+        {
+            <MudChip T="string" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small"
+                     OnClose="@(async _ => await DisconnectTenant(tenantId))">
+                @tenantId
+            </MudChip>
+        }
+        <MudButton Variant="Variant.Outlined" Color="MudBlazor.Color.Secondary" Size="MudBlazor.Size.Small"
+                   StartIcon="@Icons.Material.Filled.Add" OnClick="@OpenConnectTenantDialog">
+            Connect Tenant
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+<MudTable T="TenantSubscription" Items="@_filteredSubscriptions" Loading="@_loading"
+          Hover="true" Dense="true" Elevation="2" Class="mb-4"
+          RowClassFunc="@((sub, _) => sub == _selectedSubscription ? "mud-selected-item" : "")"
+          OnRowClick="@OnRowClick">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Subscriptions</MudText>
+        <MudSpacer />
+        <MudTextField T="string" @bind-Value="_searchText" Placeholder="Search subscriptions..."
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                      IconSize="MudBlazor.Size.Medium" Immediate="true"
+                      Class="mr-4" Style="max-width: 300px;" />
+    </ToolBarContent>
+    <HeaderContent>
+        <MudTh>Tenant</MudTh>
+        <MudTh>Name</MudTh>
+        <MudTh>Subscription ID</MudTh>
+        <MudTh>State</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Tenant">
+            <MudText Typo="Typo.body2"><strong>@context.TenantDisplayName</strong></MudText>
+            <MudText Typo="Typo.caption" Style="font-family: monospace;">@context.TenantId</MudText>
+        </MudTd>
+        <MudTd DataLabel="Name">
+            <MudLink Href="@GetAzurePortalUrl(context)" Target="_blank" Typo="Typo.body2">
+                @context.DisplayName
+            </MudLink>
+        </MudTd>
+        <MudTd DataLabel="Subscription ID">
+            <MudLink Href="@GetAzurePortalUrl(context)" Target="_blank" Typo="Typo.body2" Style="font-family: monospace;">
+                @context.SubscriptionId
+            </MudLink>
+        </MudTd>
+        <MudTd DataLabel="State">
+            <MudChip T="string" Color="@GetStateColor(context.State)" Size="MudBlazor.Size.Small">
+                @context.State
+            </MudChip>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No subscriptions found.</MudText>
+    </NoRecordsContent>
+    <LoadingContent>
+        <MudText>Loading subscriptions...</MudText>
+    </LoadingContent>
+</MudTable>
+
+@if (_selectedSubscription is not null)
+{
+    if (_loadingAnalysis)
+    {
+        <div style="text-align: center; padding: 60px;">
+            <MudProgressCircular Indeterminate="true" Size="MudBlazor.Size.Large" />
+            <MudText Typo="Typo.h6" Color="MudBlazor.Color.Secondary" Class="mt-4">Analysing reservation candidates...</MudText>
+        </div>
+    }
+    else if (_analysis is not null)
+    {
+        @* KPI Cards *@
+        <MudGrid Spacing="3" Class="mb-4">
+            <MudItem xs="12" sm="4">
+                @{
+                    var coveragePct = _analysis.CurrentReservationCoveragePercent;
+                    var coverageColor = coveragePct >= 70 ? "#4caf50" : coveragePct >= 40 ? "#ff9800" : "#f44336";
+                }
+                <MudPaper Class="pa-4" Elevation="2" Style="@($"border-left: 4px solid {coverageColor};")">
+                    <MudText Typo="Typo.overline" Color="MudBlazor.Color.Secondary">Reservation Coverage</MudText>
+                    <MudText Typo="Typo.h5" Class="mt-2">@coveragePct.ToString("F1")%</MudText>
+                    <MudProgressLinear Value="@((double)coveragePct)" Color="@GetCoverageProgressColor(coveragePct)" Class="mt-2" />
+                    <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">of spend covered by reservations</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudPaper Class="pa-4" Elevation="2" Style="border-left: 4px solid #4caf50;">
+                    <MudText Typo="Typo.overline" Color="MudBlazor.Color.Secondary">Potential Annual Savings (1-Year)</MudText>
+                    <MudText Typo="Typo.h5" Class="mt-2" Color="MudBlazor.Color.Success">
+                        @FormatCurrency(_analysis.TotalPotentialAnnualSavingsOneYear, _analysis.Currency)
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">@_analysis.Currency · 1-year reservations</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudPaper Class="pa-4" Elevation="2" Style="border-left: 4px solid #1b5e20;">
+                    <MudText Typo="Typo.overline" Color="MudBlazor.Color.Secondary">Potential Annual Savings (3-Year)</MudText>
+                    <MudText Typo="Typo.h5" Class="mt-2" Color="MudBlazor.Color.Success">
+                        @FormatCurrency(_analysis.TotalPotentialAnnualSavingsThreeYear, _analysis.Currency)
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary">@_analysis.Currency · 3-year reservations</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @* Candidates Table *@
+        <MudPaper Class="pa-4 mb-4" Elevation="2">
+            <MudText Typo="Typo.h6" Class="mb-3">Reservation Candidates</MudText>
+            @if (_analysis.Candidates.Count == 0)
+            {
+                <MudAlert Severity="Severity.Success" Dense="true">
+                    No reservation candidates found for this subscription. Either no eligible services were detected in the last 30 days, or all eligible spend is already covered by existing reservations.
+                </MudAlert>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Color="MudBlazor.Color.Secondary" Class="mb-2">Click a row for detailed savings breakdown and recommendations.</MudText>
+                <MudTable T="ReservationCandidate" Items="@_analysis.Candidates" Elevation="0" Dense="true"
+                          Hover="true" OnRowClick="@OpenCandidateDialog" Style="cursor: pointer;">
+                    <HeaderContent>
+                        <MudTh>Service</MudTh>
+                        <MudTh>Monthly Cost</MudTh>
+                        <MudTh>1-Yr %</MudTh>
+                        <MudTh>Est. Monthly Saving (1-Yr)</MudTh>
+                        <MudTh>Est. Annual Saving (1-Yr)</MudTh>
+                        <MudTh>3-Yr %</MudTh>
+                        <MudTh>Est. Annual Saving (3-Yr)</MudTh>
+                        <MudTh>Recommendation</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Service"><strong>@context.ServiceName</strong></MudTd>
+                        <MudTd DataLabel="Monthly Cost">@FormatCurrency(context.MonthlyCost, context.Currency)</MudTd>
+                        <MudTd DataLabel="1-Yr %">@context.OneYearSavingPercent%</MudTd>
+                        <MudTd DataLabel="Est. Monthly Saving (1-Yr)">
+                            <MudText Color="MudBlazor.Color.Success">@FormatCurrency(context.EstimatedMonthlySavingsOneYear, context.Currency)</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Est. Annual Saving (1-Yr)">
+                            <MudText Color="MudBlazor.Color.Success">@FormatCurrency(context.EstimatedAnnualSavingsOneYear, context.Currency)</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="3-Yr %">@context.ThreeYearSavingPercent%</MudTd>
+                        <MudTd DataLabel="Est. Annual Saving (3-Yr)">
+                            <MudText Color="MudBlazor.Color.Success">@FormatCurrency(context.EstimatedAnnualSavingsThreeYear, context.Currency)</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Recommendation">
+                            <MudChip T="string" Color="@GetRecommendationColor(context.Recommendation)" Size="MudBlazor.Size.Small">
+                                @context.Recommendation
+                            </MudChip>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </MudPaper>
+
+        @* All Detected Services — helps verify which names Azure returned *@
+        <MudExpansionPanels Class="mb-4">
+            <MudExpansionPanel Text="@($"All Detected Services ({_analysis.AllServiceItems.Count})")">
+                <MudTable T="CostBreakdownItem" Items="@_analysis.AllServiceItems" Elevation="0" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Service Name</MudTh>
+                        <MudTh>30-Day Cost</MudTh>
+                        <MudTh>Matched</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Service Name" Style="font-family: monospace;">@context.Name</MudTd>
+                        <MudTd DataLabel="30-Day Cost">@FormatCurrency(context.Cost, context.Currency)</MudTd>
+                        <MudTd DataLabel="Matched">
+                            @if (_analysis.Candidates.Any(c => c.ServiceName == context.Name))
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="MudBlazor.Color.Success" Size="MudBlazor.Size.Small" />
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.Cancel" Color="MudBlazor.Color.Default" Size="MudBlazor.Size.Small" />
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    }
+    else if (_loadError is not null)
+    {
+        <MudAlert Severity="Severity.Error">Failed to load reservation candidates: @_loadError</MudAlert>
+    }
+}
+else
+{
+    <MudPaper Class="pa-6" Elevation="2">
+        <MudText Typo="Typo.h6" Color="MudBlazor.Color.Secondary" Align="Align.Center">
+            Select a subscription above to analyse reservation candidates.
+        </MudText>
+    </MudPaper>
+}
+
+@code {
+    private List<TenantSubscription> _subscriptions = [];
+    private TenantSubscription? _selectedSubscription;
+    private ReservationAnalysis? _analysis;
+    private bool _loading = true;
+    private bool _loadingAnalysis;
+    private string? _loadError;
+    private string? _homeTenantDisplayName;
+    private string _searchText = string.Empty;
+
+    private IEnumerable<TenantSubscription> _filteredSubscriptions =>
+        string.IsNullOrWhiteSpace(_searchText)
+            ? _subscriptions
+            : _subscriptions.Where(s =>
+                s.DisplayName.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                s.SubscriptionId.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ||
+                (s.TenantDisplayName?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false) ||
+                s.TenantId.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_, _homeTenantDisplayName) = await TenantClientManager.GetHomeTenantInfoAsync();
+        await LoadSubscriptions();
+    }
+
+    private async Task LoadSubscriptions()
+    {
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            _subscriptions = (await SubscriptionService.GetSubscriptionsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load subscriptions");
+            Snackbar.Add("Failed to load subscriptions.", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenCandidateDialog(TableRowClickEventArgs<ReservationCandidate> args)
+    {
+        var parameters = new DialogParameters<ReservationCandidateDialog>
+        {
+            { x => x.Candidate, args.Item }
+        };
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        await DialogService.ShowAsync<ReservationCandidateDialog>(args.Item.ServiceName, parameters, options);
+    }
+
+    private async Task OnRowClick(TableRowClickEventArgs<TenantSubscription> args)
+    {
+        if (args.Item == _selectedSubscription)
+            return;
+
+        _selectedSubscription = args.Item;
+        await LoadAnalysis();
+    }
+
+    private static string GetAzurePortalUrl(TenantSubscription sub) =>
+        $"https://portal.azure.com/#@{sub.TenantId}/resource/subscriptions/{sub.SubscriptionId}/overview";
+
+    private async Task LoadAnalysis()
+    {
+        if (_selectedSubscription is null)
+            return;
+
+        _loadingAnalysis = true;
+        _analysis = null;
+        _loadError = null;
+        StateHasChanged();
+
+        try
+        {
+            _analysis = await ReservationService.GetReservationCandidatesAsync(_selectedSubscription);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to load reservation candidates");
+            _loadError = ex.Message;
+            Snackbar.Add("Failed to load reservation candidates.", Severity.Error);
+        }
+        finally
+        {
+            _loadingAnalysis = false;
+            StateHasChanged();
+        }
+    }
+
+    private static MudBlazor.Color GetRecommendationColor(string recommendation) => recommendation switch
+    {
+        "Buy 3-Year" => MudBlazor.Color.Success,
+        "Buy 1-Year" => MudBlazor.Color.Info,
+        _            => MudBlazor.Color.Warning
+    };
+
+    private static MudBlazor.Color GetCoverageProgressColor(decimal pct) =>
+        pct >= 70 ? MudBlazor.Color.Success : pct >= 40 ? MudBlazor.Color.Warning : MudBlazor.Color.Error;
+
+    private static MudBlazor.Color GetStateColor(string? state) => state switch
+    {
+        "Enabled"  => MudBlazor.Color.Success,
+        "Disabled" => MudBlazor.Color.Error,
+        "Warned"   => MudBlazor.Color.Warning,
+        _          => MudBlazor.Color.Default
+    };
+
+    private static string FormatCurrency(decimal amount, string currency)
+    {
+        var culture = currency == "GBP" ? "en-GB" : "en-US";
+        return amount.ToString("C2", CultureInfo.CreateSpecificCulture(culture));
+    }
+
+    private async Task OpenConnectTenantDialog()
+    {
+        var dialog = await DialogService.ShowAsync<ConnectTenantDialog>("Connect Tenant");
+        var result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: string tenantId })
+        {
+            TenantClientManager.ConnectTenant(tenantId);
+            Snackbar.Add($"Connected to tenant: {tenantId}", Severity.Success);
+            await LoadSubscriptions();
+        }
+    }
+
+    private async Task DisconnectTenant(string tenantId)
+    {
+        TenantClientManager.DisconnectTenant(tenantId);
+        Snackbar.Add($"Disconnected from tenant: {tenantId}", Severity.Info);
+        await LoadSubscriptions();
+    }
+}
